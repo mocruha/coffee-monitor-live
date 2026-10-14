@@ -1,0 +1,37 @@
+name: Coleta cafés Santa Luzia
+
+# Coleta 2x/dia. O cron do GitHub Actions é em UTC: 11h e 23h UTC = 08h e 20h
+# em America/Sao_Paulo (UTC-3, sem horário de verão desde 2019).
+on:
+  schedule:
+    - cron: "0 11,23 * * *"
+  workflow_dispatch: {}   # permite disparar manualmente pela aba Actions
+
+# Exclusão mútua: substitui o lock em arquivo da versão SQLite. Uma execução
+# nova espera a anterior terminar em vez de rodar em paralelo (AGENTS.md §7.3).
+concurrency:
+  group: coleta-cafes-santa-luzia
+  cancel-in-progress: false
+
+jobs:
+  coletar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+
+      - name: Coletar e gravar no Neon
+        env:
+          # Connection string do Neon — configure em Settings > Secrets and variables > Actions
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Contato que entra no User-Agent (AGENTS.md §5). Pode ser um secret ou uma variable.
+          CAFE_CONTATO: ${{ secrets.CAFE_CONTATO }}
+        run: python -m scrapers.santa_luzia

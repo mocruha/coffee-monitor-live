@@ -1,0 +1,3 @@
+# Dependências de desenvolvimento/teste (a suíte roda em SQLite por padrão).
+-r requirements.txt
+pytest==9.1.1

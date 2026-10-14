@@ -1,0 +1,512 @@
+{
+ "https://www.santaluzia.com.br/------500-720348/p": {
+  "nome": "Café em Grãos Blend Santo Grão",
+  "peso_g": 500,
+  "preco": 95.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Santo Grão"
+ },
+ "https://www.santaluzia.com.br/cafe--grao-intenso-fazenda-floresta---1kg-3215539/p": {
+  "nome": "Café Grão Intenso Fazenda Floresta",
+  "peso_g": 1000,
+  "preco": 150.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": null
+ },
+ "https://www.santaluzia.com.br/cafe-arabica-bourbon-grao-duas-irmas---250g-3241378/p": {
+  "nome": "Café Arábica Bourbon Grão Duas Irmãs",
+  "peso_g": 250,
+  "preco": 37.2,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Duas Irmãs"
+ },
+ "https://www.santaluzia.com.br/cafe-arabica-lobo-do-serrote-organico-em-graos-nanolote-arara-3---250g-3238245/p": {
+  "nome": "Café Arábica Lobo do Serrote Orgânico em Grãos Nanolote Arara 3",
+  "peso_g": 250,
+  "preco": 50.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Lobo do Serrote"
+ },
+ "https://www.santaluzia.com.br/cafe-arabica-lobo-do-serrote-organico-em-graos-nanolote-arara-4---250g-3238253/p": {
+  "nome": "Café Arábica Lobo do Serrote Orgânico em Grãos Nanolote Arara 4",
+  "peso_g": 250,
+  "preco": 50.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Lobo do Serrote"
+ },
+ "https://www.santaluzia.com.br/cafe-baggio-grao-bourbom-500g--921190/p": {
+  "nome": "Café em Grãos Gourmet Bourbon Baggio",
+  "peso_g": 500,
+  "preco": 83.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Baggio"
+ },
+ "https://www.santaluzia.com.br/cafe-coletanea-torra-clara-em-graos-bravo--250g-3301494/p": {
+  "nome": "Café Coletânea Torra Clara em Grãos Bravo",
+  "peso_g": 250,
+  "preco": 29.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": "clara",
+  "processo": null,
+  "marca": "Bravo"
+ },
+ "https://www.santaluzia.com.br/cafe-condessa-torrado-em-graos-gourmet-500g--1008587/p": {
+  "nome": "Café Condessa Torrado Em Grãos Gourmet",
+  "peso_g": 500,
+  "preco": 72.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Condessa"
+ },
+ "https://www.santaluzia.com.br/cafe-descafeinado-torrado-em-graos-baoba-250g-3125882/p": {
+  "nome": "Café Descafeinado Torrado em Grãos Baobá",
+  "peso_g": 250,
+  "preco": 87.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": "descafeinado",
+  "marca": "Baobá"
+ },
+ "https://www.santaluzia.com.br/cafe-em-grao-constantino-250g--3020770/p": {
+  "nome": "Café em Grãos Clássico Constantino",
+  "peso_g": 250,
+  "preco": 39.7,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Constantino"
+ },
+ "https://www.santaluzia.com.br/cafe-em-grao-edicao-especial-familia-sertao---250g-3281906/p": {
+  "nome": "Café em Grão Edição Especial Família Sertão",
+  "peso_g": 250,
+  "preco": 82.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Família Sertão"
+ },
+ "https://www.santaluzia.com.br/cafe-em-grao-framboesa-do-vale-baoba---250g-3308812/p": {
+  "nome": "Café em Grão Framboesa do Vale Baobá",
+  "peso_g": 250,
+  "preco": 56.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Baobá"
+ },
+ "https://www.santaluzia.com.br/cafe-em-grao-prima-qualita-cooxupe---250g-3298604/p": {
+  "nome": "Café em Grão Prima Qualitá Cooxupé",
+  "peso_g": 250,
+  "preco": 231.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Prima Qualitá"
+ },
+ "https://www.santaluzia.com.br/cafe-em-grao-prima-qualita-especialissimo-cooxupe---250g-3303977/p": {
+  "nome": "Café em Grão Prima Qualitá Especialíssimo Cooxupé",
+  "peso_g": 250,
+  "preco": 46.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Prima Qualitá"
+ },
+ "https://www.santaluzia.com.br/cafe-em-graos-arara-fazenda-santo-antonio-250g-3190056/p": {
+  "nome": "Café em Grãos Arara Fazenda Santo Antônio",
+  "peso_g": 250,
+  "preco": 39.8,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": null
+ },
+ "https://www.santaluzia.com.br/cafe-em-graos-classico-coffee-250g--3057682/p": {
+  "nome": "Café em Grãos Clássico Coffee++",
+  "peso_g": 250,
+  "preco": 44.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Coffee++"
+ },
+ "https://www.santaluzia.com.br/cafe-em-graos-especial-torra-media-guaspari-250g-3199380/p": {
+  "nome": "Café em Grãos Acaiá Guaspari",
+  "peso_g": 250,
+  "preco": 40.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Guaspari"
+ },
+ "https://www.santaluzia.com.br/cafe-em-graos-intenso-zaro-cafe-250g-3202569/p": {
+  "nome": "Café em Grãos Intenso Zaro Café",
+  "peso_g": 250,
+  "preco": 36.5,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Zaro Café"
+ },
+ "https://www.santaluzia.com.br/cafe-em-graos-intenso-zaro-cafe-500g-3202771/p": {
+  "nome": "Café em Grãos Intenso Zaro Café",
+  "peso_g": 500,
+  "preco": 61.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Zaro Café"
+ },
+ "https://www.santaluzia.com.br/cafe-em-graos-microlote-premiado-arara-fazenda-floresta-250g--3064115/p": {
+  "nome": "Café em Grãos Especial Arara Fazenda Floresta",
+  "peso_g": 250,
+  "preco": 51.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": null
+ },
+ "https://www.santaluzia.com.br/cafe-em-graos-nanolote-organico-catigua-1-lobo-do-serrote-250g-3126129/p": {
+  "nome": "Café Em Grãos Nanolote Orgânico Catiguá 1 Lobo do Serrote",
+  "peso_g": 250,
+  "preco": 43.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Lobo do Serrote"
+ },
+ "https://www.santaluzia.com.br/cafe-em-graos-notas-de-chocolate-rituais-3-coracoes--250g-3231984/p": {
+  "nome": "Café em Grãos Notas de Chocolate Rituais 3 Corações",
+  "peso_g": 250,
+  "preco": 50.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "3 Corações"
+ },
+ "https://www.santaluzia.com.br/cafe-em-graos-salada-de-frutas-silvia-magalhaes-cafes-250g-3149668/p": {
+  "nome": "Café Em Grãos Salada de Frutas Silvia Magalhães Cafés",
+  "peso_g": 250,
+  "preco": 72.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Silvia Magalhães Cafés"
+ },
+ "https://www.santaluzia.com.br/cafe-em-graos-suave-zaro-cafe-500g-3202780/p": {
+  "nome": "Café em Grãos Suave Zaro Café",
+  "peso_g": 500,
+  "preco": 61.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Zaro Café"
+ },
+ "https://www.santaluzia.com.br/cafe-em-graos-torra-clara-reserva-suave-zaro-cafe-250g-3119483/p": {
+  "nome": "Café em Grão Reserva Especial Zaro",
+  "peso_g": 250,
+  "preco": 61.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": null
+ },
+ "https://www.santaluzia.com.br/cafe-em-graos-torra-media-moderado-zaro-cafe-250g-3144518/p": {
+  "nome": "Café Em Grãos Torra Média Moderado Zaro Café",
+  "peso_g": 250,
+  "preco": 36.5,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": "média",
+  "processo": null,
+  "marca": "Zaro Café"
+ },
+ "https://www.santaluzia.com.br/cafe-especial-em-graos-caramelo-lp-cafes--250g-3301257/p": {
+  "nome": "Café Especial em Grãos Caramelo LP Cafés",
+  "peso_g": 250,
+  "preco": 54.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "LP Cafés"
+ },
+ "https://www.santaluzia.com.br/cafe-especial-em-graos-tropical-lp-cafes--250g-3301249/p": {
+  "nome": "Café Especial em Grãos Tropical LP Cafés",
+  "peso_g": 250,
+  "preco": 54.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "LP Cafés"
+ },
+ "https://www.santaluzia.com.br/cafe-espresso-especial-em-grao-santa-lucia-500g-780456/p": {
+  "nome": "Café Espresso Especial em Grão Santa Lúcia",
+  "peso_g": 500,
+  "preco": 56.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Santa Lúcia"
+ },
+ "https://www.santaluzia.com.br/cafe-gourmet-baronesa-250g--1257854/p": {
+  "nome": "Café Gourmet Baronesa",
+  "peso_g": 250,
+  "preco": 42.9,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Baronesa"
+ },
+ "https://www.santaluzia.com.br/cafe-gourmet-torrado-em-graos-luvizotto-250g-3141918/p": {
+  "nome": "Café Gourmet Torrado em Grãos Luvizotto",
+  "peso_g": 250,
+  "preco": 44.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Luvizotto"
+ },
+ "https://www.santaluzia.com.br/cafe-grao-torra-intensa-dupan-250g--3050858/p": {
+  "nome": "Café Grão Torra Intensa DuPan",
+  "peso_g": 250,
+  "preco": 35.1,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": "intensa",
+  "processo": null,
+  "marca": "DuPan"
+ },
+ "https://www.santaluzia.com.br/cafe-grao-torra-media-dupan-250g--3050866/p": {
+  "nome": "Café Grão Torra Média DuPan",
+  "peso_g": 250,
+  "preco": 35.8,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": "média",
+  "processo": null,
+  "marca": "DuPan"
+ },
+ "https://www.santaluzia.com.br/cafe-intenso-em-graos-baoba-250g-3084922/p": {
+  "nome": "Café Intenso em Grãos Baobá",
+  "peso_g": 250,
+  "preco": 41.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Baobá"
+ },
+ "https://www.santaluzia.com.br/cafe-latitude-13-graos-blend-chapada-diamantina-500g--1208993/p": {
+  "nome": "Café Latitude 13 Grãos BLend Chapada Diamantina",
+  "peso_g": 500,
+  "preco": 75.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Latitude 13"
+ },
+ "https://www.santaluzia.com.br/cafe-le-mont-special-graos-500g-1232070/p": {
+  "nome": "Café Le Mont Spécial Grãos",
+  "peso_g": 500,
+  "preco": 60.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Le Mont Spécial"
+ },
+ "https://www.santaluzia.com.br/cafe-magalhaes-grao-jasmim---250g-3235483/p": {
+  "nome": "Café Magalhães Grão Jasmim",
+  "peso_g": 250,
+  "preco": 87.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Magalhães"
+ },
+ "https://www.santaluzia.com.br/cafe-onnie-especial-baoba-250g--3062309/p": {
+  "nome": "Café Em Grãos Premium Baobá",
+  "peso_g": 250,
+  "preco": 45.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Baobá"
+ },
+ "https://www.santaluzia.com.br/cafe-orfeu-torrado-em-grao-organico-250g-1169599/p": {
+  "nome": "Café Orfeu Torrado Em Grão Orgânico",
+  "peso_g": 250,
+  "preco": 50.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Orfeu"
+ },
+ "https://www.santaluzia.com.br/cafe-orfeu-torrado-em-graos-classico-250g--1214683/p": {
+  "nome": "Café Orfeu Torrado Em Grãos Clássico",
+  "peso_g": 250,
+  "preco": 41.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Orfeu"
+ },
+ "https://www.santaluzia.com.br/cafe-rapadura-silvia-magalhaes-cafes-150g-3117049/p": {
+  "nome": "Café Rapadura Silvia Magalhães Cafés",
+  "peso_g": 150,
+  "preco": 82.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Silvia Magalhães Cafés"
+ },
+ "https://www.santaluzia.com.br/cafe-reserva-da-serra-grao-500g-1278290/p": {
+  "nome": "Café em Grãos Serra Real",
+  "peso_g": 500,
+  "preco": 79.6,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Serra Real"
+ },
+ "https://www.santaluzia.com.br/cafe-rituais-expresso-em-grao-3-coracoes---500g-1489666/p": {
+  "nome": "Café Rituais Expresso em Grão 3 Corações",
+  "peso_g": 500,
+  "preco": 98.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "3 Corações"
+ },
+ "https://www.santaluzia.com.br/cafe-rituais-grao-3-coracoes----500g-1489658/p": {
+  "nome": "Café Rituais Grão 3 Corações",
+  "peso_g": 500,
+  "preco": 98.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "3 Corações"
+ },
+ "https://www.santaluzia.com.br/cafe-rituais-grao-3-coracoes---500g-1489640/p": {
+  "nome": "Café Rituais Grão 3 Corações",
+  "peso_g": 500,
+  "preco": 67.0,
+  "preco_original": 93.0,
+  "em_promocao": true,
+  "torra": null,
+  "processo": null,
+  "marca": "3 Corações"
+ },
+ "https://www.santaluzia.com.br/cafe-torrado-em-graos-coffee-250g-3190951/p": {
+  "nome": "Café Torrado em Grãos Chapada de Minas Coffee++",
+  "peso_g": 250,
+  "preco": 44.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Chapada de Minas Coffee++"
+ },
+ "https://www.santaluzia.com.br/cafe-torrado-em-graos-equilibrio-silvia-magalhaes-250g-3190692/p": {
+  "nome": "Café Torrado em Grãos Equilíbrio Silvia Magalhães",
+  "peso_g": 250,
+  "preco": 66.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Silvia Magalhães"
+ },
+ "https://www.santaluzia.com.br/cafe-torrado-em-graos-illy-250-570052/p": {
+  "nome": "Café torrado em grãos illy",
+  "peso_g": 250,
+  "preco": 59.9,
+  "preco_original": 70.0,
+  "em_promocao": true,
+  "torra": null,
+  "processo": null,
+  "marca": "illy"
+ },
+ "https://www.santaluzia.com.br/cafe-torrado-em-graos-luvizotto-1kg-3141900/p": {
+  "nome": "Café Torrado em Grãos Luvizotto",
+  "peso_g": 1000,
+  "preco": 134.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Luvizotto"
+ },
+ "https://www.santaluzia.com.br/cafe-torrado-em-graos-santa-monica-1kg-956210/p": {
+  "nome": "Café Torrado Em Grãos Santa Mônica",
+  "peso_g": 1000,
+  "preco": 167.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Santa Mônica"
+ },
+ "https://www.santaluzia.com.br/cafe-unique-bourbon-amarelo-torrado-em-graos-250g--1192728/p": {
+  "nome": "Café Unique Bourbon Amarelo Torrado Em Grãos",
+  "peso_g": 250,
+  "preco": 45.0,
+  "preco_original": null,
+  "em_promocao": false,
+  "torra": null,
+  "processo": null,
+  "marca": "Unique"
+ }
+}

@@ -1,0 +1,23 @@
+# Ambiente
+.venv/
+.env
+
+# Segredos — NUNCA versionar
+.streamlit/secrets.toml
+
+# Dados locais (logs, diagnósticos, bancos de teste)
+data/*.log
+data/*.csv
+data/*.json
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Editores
+.vscode/
+.idea/
