@@ -446,9 +446,9 @@ on:
 - [x] Cadastrar os secrets do repositório: `DATABASE_URL` e `CAFE_CONTATO`.
 - [x] Criar o repositório no GitHub e dar push — **privado**, `mocruha/coffee-monitor-live`,
       branch `main`, CI de *Testes* verde (pytest contra Postgres de serviço).
-- [ ] Publicar o app no **Streamlit Community Cloud** e colar o `DATABASE_URL` em Secrets. Como o repo é
-      privado, o app nasce **privado** (herda a privacidade) — o plano grátis permite 1 app privado.
-      Passo manual (exige login/authorize no navegador).
+- [x] Publicar o app no **Streamlit Community Cloud** — `https://coffee-monitor-live.streamlit.app/`
+      (privado, herda a privacidade do repo). Entrypoint `dashboard/app.py`, Python 3.12, secret
+      `DATABASE_URL`. Confirmado lendo o Neon: 51 produtos ativos, 2 promoções, coleta `ok`.
 - [x] Disparar `gh workflow run scraper.yml` uma vez e conferir a primeira coleta no Neon —
       run `38511612477` verde: 8 páginas, **51 produtos gravados** (51 novos, 0 sem preço), coleta `ok`.
 - [x] **Desativar o cronjob do Hermes** `ba8ee65f81bf` (`coleta-cafes-santa-luzia`) — removido em
