@@ -88,11 +88,11 @@ Três serviços, acoplados **apenas pelo banco**:
                     ▼
 ┌──────────────────────────────────────┐
 │ DASHBOARD — Streamlit Cloud          │
-│  - Filtros: peso, torra, processo,   │
-│    preço, R$/kg, promoção, marca     │
+│  - Filtros: peso, preço, R$/kg,      │
+│    promoção, marca                   │
 │  - Tabela com preço atual e variação │
 │  - Evolução de preço por produto     │
-│  - Destaques e auditoria das coletas │
+│  - Destaques e promoções ativas      │
 │ Somente leitura. Acesso por e-mail.  │
 └──────────────────────────────────────┘
 ```
@@ -378,10 +378,10 @@ on:
 - **Somente leitura:** o painel nunca escreve — a garantia é de política, e há um
   teste que varre `dashboard/dados.py` por comandos de escrita
   (`test_dashboard_nao_escreve`).
-- Filtros na sidebar: peso, marca, torra, faixa de preço, faixa de R$/kg, "somente promoção", "incluir inativos" e busca por nome.
-- Tabela principal: nome, marca, peso, torra, processo, preço atual, **preço por kg** (`preco / peso_g * 1000`), variação % contra a coleta anterior (↑/↓), badge de promoção.
+- Filtros na sidebar: peso, marca, faixa de preço, faixa de R$/kg, "somente promoção" e busca por nome.
+- Tabela principal (apenas produtos na listagem; os inativos ficam no banco, com histórico): nome, marca, peso, preço atual, **preço por kg** (`preco / peso_g * 1000`), variação % contra a coleta anterior (↑/↓) e badge de promoção. Ordenação por um dropdown (Variação, Preço, R$/kg, Peso, Nome) + seletor ascendente/descendente.
 - Gráfico de linha: evolução de preço por produto selecionado.
-- Destaques: maiores quedas, promoções ativas, menor R$/kg, e aba de auditoria das execuções.
+- Destaques: maiores quedas, promoções ativas e menor R$/kg.
 
 ### 7.5 Regras de Segurança (obrigatórias)
 

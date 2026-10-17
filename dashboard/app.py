@@ -6,8 +6,8 @@ Rode com:
 O painel lê o Neon (PostgreSQL) em modo somente leitura — quem escreve é o
 scraper (`python -m scrapers.santa_luzia`, disparado pelo GitHub Actions).
 Filtros disponíveis: os que têm dado de verdade (peso, preço, R$/kg, promoção,
-marca) mais busca por nome; torra e processo aparecem apenas quando existirem,
-já que a listagem quase nunca os informa.
+marca) mais busca por nome. A tabela mostra apenas os produtos que estão na
+listagem do site; os que saíram continuam no banco, com histórico preservado.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ def barra_de_status(coletas: pd.DataFrame, resumo: dict) -> None:
         st.caption(f"Última coleta: {quando} (horário de Brasília) — status **ok**")
     else:
         st.error(f"Última coleta: {quando} — status **{resumo['ultimo_status']}**. "
-                 f"Veja a aba Execuções e o histórico do workflow no GitHub Actions.")
+                 f"Veja o histórico do workflow no GitHub Actions.")
 
 
 def sidebar(produtos: pd.DataFrame) -> pd.DataFrame:
@@ -65,11 +65,8 @@ def sidebar(produtos: pd.DataFrame) -> pd.DataFrame:
         faixa = faixa_kg = (0.0, 0.0)
 
     so_promo = st.sidebar.checkbox("Somente promoções")
-    com_torra = st.sidebar.checkbox("Somente com torra informada", value=False,
-                                    help="A listagem quase nunca informa a torra")
-    incluir_inativos = st.sidebar.checkbox("Incluir produtos fora da listagem", value=False)
 
-    filtrado = produtos if incluir_inativos else ativos.copy()
+    filtrado = ativos.copy()
     if busca:
         filtrado = filtrado[filtrado["nome"].str.contains(busca, case=False, na=False)]
     if marca:
@@ -81,8 +78,6 @@ def sidebar(produtos: pd.DataFrame) -> pd.DataFrame:
     filtrado = filtrado[filtrado["preco_por_kg"].between(*faixa_kg)]
     if so_promo:
         filtrado = filtrado[filtrado["em_promocao"]]
-    if com_torra:
-        filtrado = filtrado[filtrado["torra"].notna()]
 
     st.sidebar.caption(f"{len(filtrado)} de {len(produtos)} produtos")
     return filtrado
@@ -98,18 +93,27 @@ def tabela(produtos: pd.DataFrame) -> None:
         "variacao_txt": st.column_config.TextColumn("Variação", help="Contra a coleta imediatamente anterior"),
         "preco_por_kg": st.column_config.NumberColumn("R$/kg", format="R$ %.2f"),
         "em_promocao": st.column_config.CheckboxColumn("Promoção"),
-        "torra": st.column_config.TextColumn("Torra"),
-        "processo": st.column_config.TextColumn("Processo"),
         "atualizado_em": st.column_config.DatetimeColumn("Coleta", format="DD/MM/YYYY HH:mm"),
-        "ativo": st.column_config.CheckboxColumn("Na listagem"),
     }
-    ordenacao = st.radio("Ordenar por", ["Variação", "Preço", "R$/kg", "Peso", "Nome"],
-                         horizontal=True, label_visibility="collapsed")
+    col_ord, col_dir = st.columns([3, 1])
+    with col_ord:
+        ordenacao = st.selectbox(
+            "Ordenar por",
+            ["Variação", "Preço", "R$/kg", "Peso", "Nome"],
+            label_visibility="collapsed",
+        )
+    with col_dir:
+        ascendente = st.radio(
+            "Direção",
+            ["Asc", "Desc"],
+            horizontal=True,
+            label_visibility="collapsed",
+        ) == "Asc"
     chave = {"Variação": "variacao_pct", "Preço": "preco", "R$/kg": "preco_por_kg",
              "Peso": "peso_g", "Nome": "nome"}[ordenacao]
 
     visao = produtos.assign(variacao_txt=produtos["variacao_pct"].map(dados.formatar_pct))
-    base_ord = visao.sort_values(chave, ascending=(chave in {"variacao_pct", "nome"}), na_position="last")
+    base_ord = visao.sort_values(chave, ascending=ascendente, na_position="last")
 
     st.dataframe(
         base_ord[list(colunas)],
@@ -190,28 +194,6 @@ def destaques(produtos: pd.DataFrame) -> None:
         st.caption(f"{len(parados)} produtos ainda sem variação calculável (só uma coleta registrada).")
 
 
-def execucoes(coletas: pd.DataFrame) -> None:
-    st.caption("Cada linha é uma execução do scraper. Coleta `abortada` significa que a guarda de "
-               "sanidade barrou a gravação — normalmente layout mudado.")
-    st.dataframe(
-        coletas[["id", "iniciada_local", "finalizada_local", "status", "paginas",
-                 "requisicoes", "itens_vistos", "itens_gravados", "mensagem"]],
-        column_config={
-            "id": st.column_config.NumberColumn("Coleta", format="%d"),
-            "iniciada_local": st.column_config.DatetimeColumn("Início", format="DD/MM/YYYY HH:mm"),
-            "finalizada_local": st.column_config.DatetimeColumn("Fim", format="DD/MM/YYYY HH:mm"),
-            "status": st.column_config.TextColumn("Status"),
-            "paginas": st.column_config.NumberColumn("Páginas", format="%d"),
-            "requisicoes": st.column_config.NumberColumn("Requisições", format="%d"),
-            "itens_vistos": st.column_config.NumberColumn("Itens vistos", format="%d"),
-            "itens_gravados": st.column_config.NumberColumn("Gravados", format="%d"),
-            "mensagem": st.column_config.TextColumn("Mensagem", width="large"),
-        },
-        hide_index=True,
-        width="stretch",
-    )
-
-
 def main() -> None:
     st.title("☕ Cafés em grãos — Casa Santa Luzia")
 
@@ -250,8 +232,8 @@ def main() -> None:
     c5.metric("Fora da listagem", resumo["inativos"], help="Produtos que já não aparecem na categoria")
 
     filtrado = sidebar(produtos)
-    tabela_aba, evolucao_aba, destaques_aba, execucoes_aba = st.tabs(
-        ["Produtos", "Evolução de preço", "Destaques", "Execuções"]
+    tabela_aba, evolucao_aba, destaques_aba = st.tabs(
+        ["Produtos", "Evolução de preço", "Destaques"]
     )
     with tabela_aba:
         tabela(filtrado)
@@ -259,8 +241,6 @@ def main() -> None:
         grafico(filtrado)
     with destaques_aba:
         destaques(filtrado)
-    with execucoes_aba:
-        execucoes(coletas)
 
 
 main()
