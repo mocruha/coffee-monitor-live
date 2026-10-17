@@ -381,7 +381,7 @@ on:
   (`test_dashboard_nao_escreve`).
 - Filtros na sidebar: peso, marca, faixa de preço, faixa de R$/kg, "somente promoção" e busca por nome.
 - Tabela principal (apenas produtos na listagem; os inativos ficam no banco, com histórico): nome, marca, peso, preço atual, **preço por kg** (`preco / peso_g * 1000`), variação % contra a coleta anterior (↑/↓) e badge de promoção. Ordenação por um dropdown (Variação, Preço, R$/kg, Peso, Nome) + seletor ascendente/descendente.
-- Gráfico de linha: evolução do preço de **um produto por vez**, com granularidade escolhida (dia, semana ou mês) e agregação pela média do período. Considera **apenas as coletas das 20h** — as das 08h (histórico até 15/10/2026) ficam no banco mas não entram no gráfico.
+- Gráfico de linha: evolução do preço de **um produto por vez**, com granularidade escolhida (dia, semana ou mês) e agregação pela média do período. Usa a **última coleta de cada dia** (`dados.ultima_por_dia`) — no histórico antigo isso é a das 20h; as coletas das 08h ficam no banco mas não entram no gráfico. A agregação vive em `dados.agregar_periodo`.
 - Destaques: maiores quedas, promoções ativas e menor R$/kg.
 
 ### 7.5 Regras de Segurança (obrigatórias)
