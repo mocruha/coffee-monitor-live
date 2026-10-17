@@ -12,7 +12,7 @@ Construir e manter um sistema de monitoramento de preços e modelos de **cafés 
 - Coletar dados **duas vezes por dia** (08h e 20h, horário de Brasília).
 - **Extrair tudo a partir da página de listagem** (cards de produto), sem acessar páginas de detalhes.
 - Armazenar histórico de preços para calcular variações.
-- Disponibilizar um **dashboard web** com filtros por peso, torra, processo, preço e promoção.
+- Disponibilizar um **dashboard web** com filtros por peso, marca, preço, R$/kg e promoção.
 
 ---
 
@@ -380,7 +380,7 @@ on:
   (`test_dashboard_nao_escreve`).
 - Filtros na sidebar: peso, marca, faixa de preço, faixa de R$/kg, "somente promoção" e busca por nome.
 - Tabela principal (apenas produtos na listagem; os inativos ficam no banco, com histórico): nome, marca, peso, preço atual, **preço por kg** (`preco / peso_g * 1000`), variação % contra a coleta anterior (↑/↓) e badge de promoção. Ordenação por um dropdown (Variação, Preço, R$/kg, Peso, Nome) + seletor ascendente/descendente.
-- Gráfico de linha: evolução do preço de **um produto por vez**, com granularidade escolhida (dia, semana ou mês) e agregação pela média do período.
+- Gráfico de linha: evolução do preço de **um produto por vez**, com granularidade escolhida (dia, semana ou mês) e agregação pela média do período. Considera **apenas as coletas das 20h** — as das 08h (histórico até 15/10/2026) ficam no banco mas não entram no gráfico.
 - Destaques: maiores quedas, promoções ativas e menor R$/kg.
 
 ### 7.5 Regras de Segurança (obrigatórias)
