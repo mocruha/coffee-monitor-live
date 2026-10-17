@@ -15,6 +15,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from sqlalchemy.orm import Session
 
@@ -155,3 +156,53 @@ def test_inativo_aparece_marcado(engine, cards):
     df = dados.carregar_produtos(engine)
     assert (~df["ativo"]).sum() == 1
     assert df[~df["ativo"]]["ultima_visao"].notna().all()
+
+
+# --- Gráfico de evolução: "última coleta do dia" e agregação (PRs #2/#4) ---
+
+def _historico_brt() -> pd.DataFrame:
+    """3 dias com coleta às 08h e 20h; o 2º dia tem também uma coleta atrasada às 21h.
+
+    Horários em UTC: 08h BRT = 11h UTC, 20h BRT = 23h UTC, 21h BRT = 00h UTC do dia seguinte.
+    """
+    coleta = pd.to_datetime([
+        "2026-10-13 11:00", "2026-10-13 23:00",
+        "2026-10-14 11:00", "2026-10-14 23:00", "2026-10-15 00:00",
+        "2026-10-15 11:00", "2026-10-15 23:00",
+    ], utc=True)
+    df = pd.DataFrame({"data_coleta": coleta, "preco": [1.0, 10.0, 2.0, 20.0, 21.0, 3.0, 30.0]})
+    df["data_local"] = df["data_coleta"].dt.tz_convert("America/Sao_Paulo")
+    df["preco_kg"] = df["preco"] * 4
+    return df
+
+
+def test_ultima_por_dia_esconde_as_08h():
+    h = dados.ultima_por_dia(_historico_brt())
+    assert len(h) == 3, "deve sobrar um ponto por dia"
+    assert h["data_local"].dt.hour.tolist() == [20, 21, 20]
+
+
+def test_ultima_por_dia_mantem_coleta_atrasada():
+    """Regressão: o filtro antigo (hora == 20) descartava a coleta das 21h."""
+    h = dados.ultima_por_dia(_historico_brt())
+    dia_14 = h[h["data_local"].dt.date == pd.Timestamp("2026-10-14").date()]
+    assert dia_14["preco"].iloc[0] == 21.0, "a última coleta do dia (21h) deve sobreviver"
+
+
+def test_agregar_periodo_dia_usa_data_sem_hora():
+    h = dados.ultima_por_dia(_historico_brt())
+    agg = dados.agregar_periodo(h, "Dia")
+    assert len(agg) == 3
+    assert agg["preco"].tolist() == [10.0, 21.0, 30.0]
+    # datetime.date não tem hora: é o que impede o eixo de mostrar hora/segundo
+    assert all(not hasattr(p, "hour") for p in agg["periodo"])
+
+
+def test_agregar_periodo_semana_e_mes():
+    h = dados.ultima_por_dia(_historico_brt())
+    semana = dados.agregar_periodo(h, "Semana")
+    assert len(semana) == 1, "os 3 dias caem na mesma semana ISO"
+    assert semana["preco"].iloc[0] == pytest.approx((10 + 21 + 30) / 3)
+    mes = dados.agregar_periodo(h, "Mês")
+    assert len(mes) == 1
+    assert mes["preco"].iloc[0] == pytest.approx((10 + 21 + 30) / 3)

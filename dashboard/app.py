@@ -32,9 +32,15 @@ def carregar() -> tuple[pd.DataFrame, pd.DataFrame]:
     return dados.carregar_produtos(), dados.carregar_coletas()
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def carregar_historico(produto_id: int) -> pd.DataFrame:
+    """Histórico de um produto, com cache — evita bater no Neon a cada clique."""
+    return dados.carregar_historico(produto_id)
+
+
 def barra_de_status(coletas: pd.DataFrame, resumo: dict) -> None:
     if coletas.empty:
-        st.info("Nenhuma coleta registrada ainda. A coleta roda no GitHub Actions (2x/dia).")
+        st.info("Nenhuma coleta registrada ainda. A coleta roda no GitHub Actions, 1x/dia às 20h (horário de Brasília).")
         return
     ultima = resumo["ultima_coleta"]
     quando = ultima.strftime("%d/%m/%Y %H:%M") if ultima is not None else "—"
@@ -90,7 +96,8 @@ def tabela(produtos: pd.DataFrame) -> None:
         "peso_g": st.column_config.NumberColumn("Peso", format="%d g"),
         "preco": st.column_config.NumberColumn("Preço", format="R$ %.2f"),
         "preco_anterior": st.column_config.NumberColumn("Preço anterior", format="R$ %.2f"),
-        "variacao_txt": st.column_config.TextColumn("Variação", help="Contra a coleta imediatamente anterior"),
+        "variacao_txt": st.column_config.TextColumn(
+            "Variação", help="Contra a coleta anterior registrada (pode ser de mais de um dia atrás)"),
         "preco_por_kg": st.column_config.NumberColumn("R$/kg", format="R$ %.2f"),
         "em_promocao": st.column_config.CheckboxColumn("Promoção"),
         "atualizado_em": st.column_config.DatetimeColumn("Coleta", format="DD/MM/YYYY HH:mm"),
@@ -123,6 +130,16 @@ def tabela(produtos: pd.DataFrame) -> None:
         height=620,
     )
 
+    # Avisa quando a variação compara dias não consecutivos (houve dia sem coleta).
+    lacuna_h = (
+        pd.to_datetime(produtos["data_coleta"], utc=True)
+        - pd.to_datetime(produtos["data_anterior"], utc=True)
+    ).dt.total_seconds() / 3600
+    longe = produtos["variacao_pct"].notna() & lacuna_h.gt(36)
+    if longe.any():
+        st.caption(f"{int(longe.sum())} produto(s) comparam com uma coleta de mais de um dia atrás "
+                   f"(houve dia sem coleta).")
+
     promocoes = produtos[produtos["em_promocao"]]
     if not promocoes.empty:
         st.subheader("Promoções ativas")
@@ -136,7 +153,8 @@ def tabela(produtos: pd.DataFrame) -> None:
 
 
 def grafico(produtos: pd.DataFrame) -> None:
-    st.caption("Preço médio por período, considerando só as coletas das **20h** (horário de Brasília).")
+    st.caption("Usa a **última coleta de cada dia** (no histórico antigo, a das 20h); "
+               "o ponto é o preço médio do período escolhido.")
     if produtos.empty:
         st.info("Nenhum produto no filtro atual.")
         return
@@ -147,13 +165,13 @@ def grafico(produtos: pd.DataFrame) -> None:
     escolhido = st.selectbox("Produto", ordenados["nome"].tolist(), index=padrao)
 
     linha = ordenados[ordenados["nome"] == escolhido].iloc[0]
+    sem_peso = pd.isna(linha["peso_g"])
 
-    # Só as coletas das 20h: as das 08h (existentes até 15/10/2026) ficam no banco
-    # mas são ignoradas no gráfico.
-    historico = dados.carregar_historico(int(linha["produto_id"]))
-    historico = historico[historico["data_local"].dt.hour == 20]
+    # Uma linha por dia (a última coleta do dia), com cache. Assim as coletas das
+    # 08h do histórico antigo ficam de fora e uma coleta atrasada não some.
+    historico = dados.ultima_por_dia(carregar_historico(int(linha["produto_id"])))
     if len(historico) < 2:
-        st.info("Menos de duas coletas das 20h para este produto — a evolução aparece a partir da segunda.")
+        st.info("Menos de duas coletas diárias para este produto — a evolução aparece a partir da segunda.")
         return
     historico = historico.assign(preco_kg=historico["preco"] / linha["peso_g"] * 1000)
 
@@ -164,21 +182,14 @@ def grafico(produtos: pd.DataFrame) -> None:
             label_visibility="collapsed",
         ) or "Dia"
     with col_met:
+        opcoes = ["Preço do pacote"] if sem_peso else ["Preço do pacote", "Preço por quilo"]
         metrica = st.segmented_control(
-            "Métrica", ["Preço do pacote", "Preço por quilo"], default="Preço por quilo",
-            label_visibility="collapsed",
-        ) or "Preço por quilo"
+            "Métrica", opcoes, default=opcoes[0], label_visibility="collapsed",
+        ) or opcoes[0]
+    if sem_peso:
+        st.caption("Produto sem peso cadastrado — só o preço do pacote pode ser mostrado.")
 
-    # Média por período (dia/semana/mês). O fuso já está em Brasília; retirá-lo
-    # antes de virar período evita o aviso de "drop timezone" do pandas.
-    regra = {"Dia": "D", "Semana": "W", "Mês": "M"}[granularidade]
-    historico["periodo"] = (
-        historico["data_local"].dt.tz_localize(None).dt.to_period(regra).dt.start_time
-    )
-    agregado = historico.groupby("periodo")[["preco", "preco_kg"]].mean().reset_index()
-    if granularidade == "Dia":
-        # Vira só a data: sem isso o eixo exibe hora e segundos.
-        agregado["periodo"] = agregado["periodo"].dt.date
+    agregado = dados.agregar_periodo(historico, granularidade)
 
     coluna = "preco" if metrica == "Preço do pacote" else "preco_kg"
     figura = px.line(agregado, x="periodo", y=coluna, markers=True,

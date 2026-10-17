@@ -157,6 +157,36 @@ def carregar_historico(produto_id: int, engine: Engine | None = None) -> pd.Data
     return df
 
 
+def ultima_por_dia(historico: pd.DataFrame) -> pd.DataFrame:
+    """Uma linha por dia: a última coleta de cada dia (por `data_local`).
+
+    Substitui o antigo filtro "hora == 20": esconde as coletas das 08h do
+    histórico antigo e continua correto quando uma coleta atrasa (ex.: 21h) ou
+    quando uma run manual de recuperação roda fora do horário.
+    """
+    if historico.empty:
+        return historico
+    ordenado = historico.sort_values("data_local")
+    return ordenado.groupby(ordenado["data_local"].dt.date).tail(1)
+
+
+def agregar_periodo(historico: pd.DataFrame, granularidade: str) -> pd.DataFrame:
+    """Média de `preco`/`preco_kg` por dia, semana ou mês.
+
+    Na granularidade "Dia" o período vira `date` (sem hora), para o eixo não
+    exibir hora/segundo. O fuso já vem em Brasília; retirá-lo antes de virar
+    período evita o aviso de "drop timezone" do pandas.
+    """
+    regra = {"Dia": "D", "Semana": "W", "Mês": "M"}[granularidade]
+    com_periodo = historico.assign(
+        periodo=historico["data_local"].dt.tz_localize(None).dt.to_period(regra).dt.start_time
+    )
+    agregado = com_periodo.groupby("periodo")[["preco", "preco_kg"]].mean().reset_index()
+    if granularidade == "Dia":
+        agregado["periodo"] = agregado["periodo"].dt.date
+    return agregado
+
+
 def carregar_coletas(limite: int = 20, engine: Engine | None = None) -> pd.DataFrame:
     engine = engine or criar_engine()
     with engine.connect() as con:
