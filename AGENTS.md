@@ -9,7 +9,7 @@
 
 Construir e manter um sistema de monitoramento de preços e modelos de **cafés em grãos** vendidos exclusivamente no site do **Casa Santa Luzia** (`santaluzia.com.br`). O sistema deve:
 
-- Coletar dados **duas vezes por dia** (08h e 20h, horário de Brasília).
+- Coletar dados **uma vez por dia** (20h, horário de Brasília).
 - **Extrair tudo a partir da página de listagem** (cards de produto), sem acessar páginas de detalhes.
 - Armazenar histórico de preços para calcular variações.
 - Disponibilizar um **dashboard web** com filtros por peso, torra, processo, preço e promoção.
@@ -66,8 +66,8 @@ Três serviços, acoplados **apenas pelo banco**:
 ```text
 ┌──────────────────────────────────────┐
 │ SCRAPER — GitHub Actions (cron)      │
-│ Cron: 0 11,23 * * * (UTC)            │
-│      = 08h e 20h America/Sao_Paulo   │
+│ Cron: 0 23 * * * (UTC)               │
+│      = 20h America/Sao_Paulo         │
 │ 1. Acessa a listagem de cafés        │
 │    (com paginação)                   │
 │ 2. Extrai cada card (§4)             │
@@ -206,7 +206,7 @@ Como agora só acessamos a página de listagem (provavelmente 1–5 páginas), o
 | `USER_AGENT` | `Mozilla/5.0 (compatible; SantaLuziaCafeTracker/2.0; <contato>)` | Identificação clara. O contato vem de `CAFE_CONTATO` e é sanitizado para ASCII — acento em cabeçalho HTTP estoura `UnicodeEncodeError` |
 | `TIMEOUT` | 15s | Timeout por requisição |
 
-Volume real medido em 13/10/2026: 7 páginas com produtos + 1 página vazia (que encerra a paginação) + 1 robots.txt = **9 requisições por execução**, ~18s de duração com o delay de 2s. Muito abaixo do teto.
+Volume real medido em 13/10/2026: 7 páginas com produtos + 1 página vazia (que encerra a paginação) + 1 robots.txt = **9 requisições por execução**, ~18s de duração com o delay de 2s. Muito abaixo do teto. Com a coleta agora **1x/dia**, são ~9 requisições/dia.
 
 Tratamento de erros:
 
@@ -288,7 +288,7 @@ CREATE TABLE IF NOT EXISTS coletas (
 coffee-monitor-live/
 ├── .github/
 │   └── workflows/
-│       ├── scraper.yml           # coleta 2x/dia + dispatch manual
+│       ├── scraper.yml           # coleta 1x/dia + dispatch manual
 │       └── testes.yml            # pytest com service container PostgreSQL
 ├── .streamlit/
 │   ├── secrets.toml              # NUNCA vai para o Git (no .gitignore)
@@ -347,13 +347,14 @@ coffee-monitor-live/
 
 ### 7.3 Agendamento — GitHub Actions
 
-**Decisão (13/10/2026):** a coleta roda no **GitHub Actions**, 2x/dia, abandonando
+**Decisão (13/10/2026, revisada em 16/10/2026):** a coleta roda no **GitHub
+Actions**, **1x/dia às 20h** (antes eram 2x/dia, às 08h e 20h), abandonando
 o cronjob local do Hermes. O cron do Actions é em **UTC**:
 
 ```yaml
 on:
   schedule:
-    - cron: "0 11,23 * * *"   # 11h e 23h UTC = 08h e 20h em America/Sao_Paulo (UTC-3)
+    - cron: "0 23 * * *"      # 23h UTC = 20h em America/Sao_Paulo (UTC-3)
   workflow_dispatch: {}        # disparo manual pela aba Actions
 ```
 
@@ -366,7 +367,7 @@ on:
 - **Sem estado local:** o runner é efêmero; nada é gravado além do Neon. Logs
   úteis vão para o stdout da run.
 - **Atrasos:** o cron do Actions pode atrasar alguns minutos em horários de pico;
-  aceitável para 2 coletas/dia.
+  aceitável para 1 coleta/dia.
 - **Justificativa vs. alternativas:** cronjob local (WSL) só roda com o PC
   ligado; APScheduler seria mais uma dependência. O Actions tem agenda
   persistente e é gratuito para repositórios públicos.
@@ -420,11 +421,11 @@ on:
 - **Cards via JS — resolvido**: verificado em 13/10/2026 que a listagem vem no HTML inicial (VTEX IO server-rendered). Playwright fica fora do projeto.
 - **Atributos não presentes no título**: torra e processo ficarão NULL para vários produtos. Isso é aceitável — o dashboard mostra "não informado" e os filtros ignoram NULL.
 - **Mudanças de layout**: seletores CSS podem quebrar. Manter o código modular e rodar `.venv/bin/pytest` (testes de regressão contra o HTML real) e `scripts/validar_parser.py` sempre que notar falha.
-- **Anti-bot**: com 2 requisições/dia e intervalo de 2s, risco mínimo.
+- **Anti-bot**: com 1 execução/dia e intervalo de 2s, risco mínimo.
 - **Idempotência**: URL como chave única (`UNIQUE`) evita duplicação de produtos; `precos` sempre insere nova linha (histórico).
 - **Neon suspende conexões ociosas**: por isso o engine usa `pool_pre_ping=True` (`scrapers/base.py`).
 - **Segredo no Streamlit Cloud**: o acesso é restrito por lista de e-mails; qualquer pessoa autorizada enxerga os dados, mas não as credenciais.
-- **Sem Airflow nesta fase**: GitHub Actions é suficiente para 2 execuções diárias sem dependências complexas.
+- **Sem Airflow nesta fase**: GitHub Actions é suficiente para 1 execução diária sem dependências complexas.
 
 ---
 
