@@ -136,29 +136,47 @@ def tabela(produtos: pd.DataFrame) -> None:
 
 
 def grafico(produtos: pd.DataFrame) -> None:
-    st.caption("A evolução só aparece a partir da segunda coleta de cada produto.")
+    st.caption("Cada ponto é o preço médio do período escolhido.")
     if produtos.empty:
         st.info("Nenhum produto no filtro atual.")
         return
-    escolhidos = st.multiselect(
-        "Produtos para comparar",
-        produtos["nome"].tolist(),
-        default=produtos.sort_values("preco_por_kg")["nome"].head(3).tolist(),
-    )
-    if not escolhidos:
-        return
-    linhas = []
-    for _, linha in produtos[produtos["nome"].isin(escolhidos)].iterrows():
-        historico = dados.carregar_historico(int(linha["produto_id"]))
-        historico = historico.assign(produto=linha["nome"], preco_kg=historico["preco"] / linha["peso_g"] * 1000)
-        linhas.append(historico)
-    serie = pd.concat(linhas, ignore_index=True)
 
-    metrica = st.radio("Mostrar", ["Preço do pacote", "Preço por quilo"], horizontal=True)
+    # Um produto por vez; o de melhor R$/kg já vem selecionado.
+    ordenados = produtos.sort_values("nome").reset_index(drop=True)
+    padrao = int(ordenados["preco_por_kg"].idxmin()) if ordenados["preco_por_kg"].notna().any() else 0
+    escolhido = st.selectbox("Produto", ordenados["nome"].tolist(), index=padrao)
+
+    linha = ordenados[ordenados["nome"] == escolhido].iloc[0]
+    historico = dados.carregar_historico(int(linha["produto_id"]))
+    if len(historico) < 2:
+        st.info("Este produto tem só uma coleta registrada — a evolução aparece a partir da segunda.")
+        return
+    historico = historico.assign(preco_kg=historico["preco"] / linha["peso_g"] * 1000)
+
+    col_gran, col_met = st.columns(2)
+    with col_gran:
+        granularidade = st.segmented_control(
+            "Agrupamento", ["Dia", "Semana", "Mês"], default="Dia",
+            label_visibility="collapsed",
+        ) or "Dia"
+    with col_met:
+        metrica = st.segmented_control(
+            "Métrica", ["Preço do pacote", "Preço por quilo"], default="Preço por quilo",
+            label_visibility="collapsed",
+        ) or "Preço por quilo"
+
+    # Média por período (dia/semana/mês). O fuso já está em Brasília; retirá-lo
+    # antes de virar período evita o aviso de "drop timezone" do pandas.
+    regra = {"Dia": "D", "Semana": "W", "Mês": "M"}[granularidade]
+    historico["periodo"] = (
+        historico["data_local"].dt.tz_localize(None).dt.to_period(regra).dt.start_time
+    )
+    agregado = historico.groupby("periodo")[["preco", "preco_kg"]].mean().reset_index()
+
     coluna = "preco" if metrica == "Preço do pacote" else "preco_kg"
-    figura = px.line(serie, x="data_local", y=coluna, color="produto", markers=True,
-                     labels={"data_local": "Coleta (horário de Brasília)", coluna: metrica})
-    figura.update_layout(legend_title_text="", margin=dict(t=10))
+    figura = px.line(agregado, x="periodo", y=coluna, markers=True,
+                     labels={"periodo": "Período (horário de Brasília)", coluna: metrica})
+    figura.update_layout(margin=dict(t=10))
     st.plotly_chart(figura, width="stretch")
 
 
