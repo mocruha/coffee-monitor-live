@@ -136,7 +136,7 @@ def tabela(produtos: pd.DataFrame) -> None:
 
 
 def grafico(produtos: pd.DataFrame) -> None:
-    st.caption("Cada ponto é o preço médio do período escolhido.")
+    st.caption("Preço médio por período, considerando só as coletas das **20h** (horário de Brasília).")
     if produtos.empty:
         st.info("Nenhum produto no filtro atual.")
         return
@@ -147,9 +147,13 @@ def grafico(produtos: pd.DataFrame) -> None:
     escolhido = st.selectbox("Produto", ordenados["nome"].tolist(), index=padrao)
 
     linha = ordenados[ordenados["nome"] == escolhido].iloc[0]
+
+    # Só as coletas das 20h: as das 08h (existentes até 15/10/2026) ficam no banco
+    # mas são ignoradas no gráfico.
     historico = dados.carregar_historico(int(linha["produto_id"]))
+    historico = historico[historico["data_local"].dt.hour == 20]
     if len(historico) < 2:
-        st.info("Este produto tem só uma coleta registrada — a evolução aparece a partir da segunda.")
+        st.info("Menos de duas coletas das 20h para este produto — a evolução aparece a partir da segunda.")
         return
     historico = historico.assign(preco_kg=historico["preco"] / linha["peso_g"] * 1000)
 
@@ -172,10 +176,14 @@ def grafico(produtos: pd.DataFrame) -> None:
         historico["data_local"].dt.tz_localize(None).dt.to_period(regra).dt.start_time
     )
     agregado = historico.groupby("periodo")[["preco", "preco_kg"]].mean().reset_index()
+    if granularidade == "Dia":
+        # Vira só a data: sem isso o eixo exibe hora e segundos.
+        agregado["periodo"] = agregado["periodo"].dt.date
 
     coluna = "preco" if metrica == "Preço do pacote" else "preco_kg"
     figura = px.line(agregado, x="periodo", y=coluna, markers=True,
-                     labels={"periodo": "Período (horário de Brasília)", coluna: metrica})
+                     labels={"periodo": "Data (horário de Brasília)", coluna: metrica})
+    figura.update_xaxes(tickformat="%d/%m/%Y", hoverformat="%d/%m/%Y")
     figura.update_layout(margin=dict(t=10))
     st.plotly_chart(figura, width="stretch")
 
