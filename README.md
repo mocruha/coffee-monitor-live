@@ -1,5 +1,7 @@
 # Monitor de Cafés em Grãos — Casa Santa Luzia
 
+**[Dashboard ao vivo → coffee-monitor-live.streamlit.app](https://coffee-monitor-live.streamlit.app/)**
+
 Monitoramento de preços dos **cafés em grãos** vendidos no site do Casa Santa
 Luzia, com histórico no **Neon (PostgreSQL)** e dashboard **Streamlit**.
 
