@@ -206,3 +206,52 @@ def test_agregar_periodo_semana_e_mes():
     mes = dados.agregar_periodo(h, "Mês")
     assert len(mes) == 1
     assert mes["preco"].iloc[0] == pytest.approx((10 + 21 + 30) / 3)
+
+
+# --- Filtros do painel: produto sem peso não pode desaparecer (PR fix/A-1) ---
+
+def _sem_peso(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Simula a loja removendo o peso do título: `peso_g` e `preco_por_kg` viram NaN.
+
+    É o cenário do bug A-1: o produto continua ativo e coletado, mas sem R$/kg.
+    """
+    alterado = df.copy()
+    alvo = alterado[alterado["ativo"]].index[0]
+    alterado.loc[alvo, "peso_g"] = pd.NA
+    alterado.loc[alvo, "preco_por_kg"] = pd.NA
+    return alterado, int(alterado.loc[alvo, "produto_id"])
+
+
+def test_filtro_nao_esconde_produto_sem_peso(banco):
+    """Regressão A-1: `between` devolve False para NaN e sumia com o produto de todas as abas."""
+    df = dados.carregar_produtos(banco)
+    alterado, alvo = _sem_peso(df)
+    ativos = alterado[alterado["ativo"]]
+
+    filtrado = dados.filtrar(ativos, faixa_kg=(ativos["preco_por_kg"].min(), ativos["preco_por_kg"].max()))
+    assert alvo in set(filtrado["produto_id"]), "produto sem peso sumiu do filtro de R$/kg"
+
+    # estreitar a faixa de R$/kg também não pode esconder: desconhecido não é "fora da faixa"
+    estreitado = dados.filtrar(ativos, faixa_kg=(500.0, 600.0))
+    assert alvo in set(estreitado["produto_id"])
+
+
+def test_formatar_peso_nulo_nao_vira_nang():
+    """R-2: f'{float('nan')}g' renderiza 'nang' na UI."""
+    assert dados.formatar_peso(None) == "peso não informado"
+    assert dados.formatar_peso(float("nan")) == "peso não informado"
+    assert dados.formatar_peso(250) == "250g"
+    assert dados.formatar_peso(1000) == "1kg"
+    # A-6: peso acima de 1 kg não pode virar "1kg"
+    assert dados.formatar_peso(1500) == "1,5kg"
+
+
+def test_filtro_de_peso_e_marca_continuam_funcionando(banco):
+    df = dados.carregar_produtos(banco)
+    ativos = df[df["ativo"]]
+    duzentos_e_cinquenta = dados.filtrar(ativos, pesos=[250])
+    assert set(duzentos_e_cinquenta["peso_g"]) == {250}
+
+    marca = ativos["marca"].dropna().iloc[0]
+    da_marca = dados.filtrar(ativos, marcas=[marca])
+    assert set(da_marca["marca"]) == {marca}

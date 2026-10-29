@@ -122,6 +122,57 @@ def formatar_pct(valor: float | None) -> str:
     return f"{valor:+.2f}".replace(".", ",") + "%"
 
 
+def formatar_peso(peso_g: float | None) -> str:
+    """250 -> '250g', 1000 -> '1kg', 1500 -> '1,5kg'; None/NaN -> texto explicativo.
+
+    Sem isso, `f"{float('nan')}g"` imprime literalmente "nang" na tela.
+    """
+    if peso_g is None or pd.isna(peso_g):
+        return "peso não informado"
+    valor = float(peso_g)
+    if valor < 1000:
+        return f"{valor:g}g"
+    return f"{valor / 1000:g}".replace(".", ",") + "kg"
+
+
+def _na_faixa(serie: pd.Series, faixa: tuple[float, float] | None) -> pd.Series:
+    """Máscara de faixa que **não descarta** valor desconhecido (`NaN`).
+
+    `Series.between` devolve `False` para `NaN`, então um produto sem peso
+    (R$/kg desconhecido) desaparecia de todas as abas mesmo com o slider na
+    faixa completa. Desconhecido não é "fora da faixa".
+    """
+    if faixa is None:
+        return pd.Series(True, index=serie.index)
+    return serie.isna() | serie.between(*faixa)
+
+
+def filtrar(
+    produtos: pd.DataFrame,
+    *,
+    busca: str = "",
+    marcas: list[str] | None = None,
+    pesos: list[int] | None = None,
+    faixa_preco: tuple[float, float] | None = None,
+    faixa_kg: tuple[float, float] | None = None,
+    so_promo: bool = False,
+) -> pd.DataFrame:
+    """Aplica os filtros da sidebar. Vive aqui (e não no `app.py`) para ser testável."""
+    filtrado = produtos
+    if busca:
+        # regex=False: a busca é texto literal; sem isso, "(" ou "+" derrubam a página
+        filtrado = filtrado[filtrado["nome"].str.contains(busca, case=False, na=False, regex=False)]
+    if marcas:
+        filtrado = filtrado[filtrado["marca"].isin(marcas)]
+    if pesos:
+        filtrado = filtrado[filtrado["peso_g"].isin(pesos)]
+    filtrado = filtrado[_na_faixa(filtrado["preco"], faixa_preco)]
+    filtrado = filtrado[_na_faixa(filtrado["preco_por_kg"], faixa_kg)]
+    if so_promo:
+        filtrado = filtrado[filtrado["em_promocao"]]
+    return filtrado
+
+
 def carregar_produtos(engine: Engine | None = None) -> pd.DataFrame:
     """Um registro por produto com o preço atual e a variação contra a coleta anterior."""
     engine = engine or criar_engine()

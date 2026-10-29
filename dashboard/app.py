@@ -58,32 +58,28 @@ def sidebar(produtos: pd.DataFrame) -> pd.DataFrame:
     busca = st.sidebar.text_input("Buscar por nome", placeholder="ex.: orfeu, zaro, nanolote")
     marcas = sorted(m for m in ativos["marca"].dropna().unique())
     marca = st.sidebar.multiselect("Marca", marcas)
-    pesos = sorted(int(p) for p in ativos["peso_g"].dropna().unique())
-    peso = st.sidebar.multiselect("Peso", [f"{p}g" if p < 1000 else "1kg" for p in pesos],
-                                  help="Pesos existentes na categoria")
+    por_rotulo = {dados.formatar_peso(p): p for p in ativos["peso_g"].dropna().unique()}
+    peso = [por_rotulo[r] for r in
+            st.sidebar.multiselect("Peso", sorted(por_rotulo), help="Pesos existentes na categoria")]
 
+    faixa = faixa_kg = None
     if not ativos.empty:
         minimo, maximo = float(ativos["preco"].min()), float(ativos["preco"].max())
         faixa = st.sidebar.slider("Faixa de preço (R$)", minimo, maximo, (minimo, maximo), step=1.0)
-        kg_min, kg_max = float(ativos["preco_por_kg"].min()), float(ativos["preco_por_kg"].max())
-        faixa_kg = st.sidebar.slider("Faixa de R$/kg", kg_min, kg_max, (kg_min, kg_max), step=1.0)
-    else:
-        faixa = faixa_kg = (0.0, 0.0)
+        # produtos sem peso têm R$/kg desconhecido: sem este dropna o slider recebe NaN
+        com_kg = ativos["preco_por_kg"].dropna()
+        if not com_kg.empty:
+            kg_min, kg_max = float(com_kg.min()), float(com_kg.max())
+            faixa_kg = st.sidebar.slider("Faixa de R$/kg", kg_min, kg_max, (kg_min, kg_max), step=1.0,
+                                         help="Produtos sem peso cadastrado continuam na lista "
+                                              "(R$/kg não calculável).")
 
     so_promo = st.sidebar.checkbox("Somente promoções")
 
-    filtrado = ativos.copy()
-    if busca:
-        filtrado = filtrado[filtrado["nome"].str.contains(busca, case=False, na=False)]
-    if marca:
-        filtrado = filtrado[filtrado["marca"].isin(marca)]
-    if peso:
-        alvos = {1000 if p == "1kg" else int(p.rstrip("g")) for p in peso}
-        filtrado = filtrado[filtrado["peso_g"].isin(alvos)]
-    filtrado = filtrado[filtrado["preco"].between(*faixa)]
-    filtrado = filtrado[filtrado["preco_por_kg"].between(*faixa_kg)]
-    if so_promo:
-        filtrado = filtrado[filtrado["em_promocao"]]
+    filtrado = dados.filtrar(
+        ativos, busca=busca, marcas=marca, pesos=peso,
+        faixa_preco=faixa, faixa_kg=faixa_kg, so_promo=so_promo,
+    )
 
     st.sidebar.caption(f"{len(filtrado)} de {len(produtos)} produtos")
     return filtrado
@@ -148,7 +144,7 @@ def tabela(produtos: pd.DataFrame) -> None:
             st.markdown(
                 f"**{linha['nome']}** — de {dados.formatar_brl_md(linha['preco_original'])} "
                 f"por {dados.formatar_brl_md(linha['preco'])} ({desconto:.0f}% off) · "
-                f"{linha['peso_g']}g · {dados.formatar_brl_md(linha['preco_por_kg'])}/kg"
+                f"{dados.formatar_peso(linha['peso_g'])} · {dados.formatar_brl_md(linha['preco_por_kg'])}/kg"
             )
 
 
@@ -173,7 +169,10 @@ def grafico(produtos: pd.DataFrame) -> None:
     if len(historico) < 2:
         st.info("Menos de duas coletas diárias para este produto — a evolução aparece a partir da segunda.")
         return
-    historico = historico.assign(preco_kg=historico["preco"] / linha["peso_g"] * 1000)
+    if sem_peso:
+        historico = historico.assign(preco_kg=float("nan"))
+    else:
+        historico = historico.assign(preco_kg=historico["preco"] / linha["peso_g"] * 1000)
 
     col_gran, col_met = st.columns(2)
     with col_gran:
@@ -214,16 +213,16 @@ def destaques(produtos: pd.DataFrame) -> None:
             for _, linha in quedas.iterrows():
                 st.markdown(
                     f"**{dados.formatar_pct(linha['variacao_pct'])}** · {linha['nome']} "
-                    f"({linha['peso_g']}g) — {dados.formatar_brl_md(linha['preco_anterior'])} → "
+                    f"({dados.formatar_peso(linha['peso_g'])}) — {dados.formatar_brl_md(linha['preco_anterior'])} → "
                     f"{dados.formatar_brl_md(linha['preco'])}"
                 )
 
     with direita:
         st.subheader("Menor preço por quilo")
-        for _, linha in produtos.sort_values("preco_por_kg").head(10).iterrows():
+        for _, linha in produtos.dropna(subset=["preco_por_kg"]).sort_values("preco_por_kg").head(10).iterrows():
             st.markdown(
                 f"**{dados.formatar_brl_md(linha['preco_por_kg'])}/kg** · {linha['nome']} "
-                f"({linha['peso_g']}g) — {dados.formatar_brl_md(linha['preco'])}"
+                f"({dados.formatar_peso(linha['peso_g'])}) — {dados.formatar_brl_md(linha['preco'])}"
             )
 
     parados = produtos[produtos["variacao_pct"].isna()]
