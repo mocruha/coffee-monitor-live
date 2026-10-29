@@ -255,3 +255,30 @@ def test_filtro_de_peso_e_marca_continuam_funcionando(banco):
     marca = ativos["marca"].dropna().iloc[0]
     da_marca = dados.filtrar(ativos, marcas=[marca])
     assert set(da_marca["marca"]) == {marca}
+
+
+# --- Gráfico: produtos homônimos precisam de rótulo único (A-2) ---
+
+def test_opcoes_produto_nao_colidem_com_homonimos(banco):
+    """`nome` não é único (a chave é a url): 2 pares reais na listagem."""
+    df = dados.carregar_produtos(banco)
+    opcoes = dados.opcoes_produto(df[df["ativo"]])
+
+    assert len(opcoes) == 51
+    rotulos = [rotulo for _, rotulo in opcoes]
+    assert len(set(rotulos)) == len(rotulos), "rótulos repetidos: o selectbox esconde produtos"
+
+    rituais = [(pid, r) for pid, r in opcoes if r.startswith("Café Rituais Grão 3 Corações")]
+    assert len(rituais) == 2, "os dois homônimos devem aparecer"
+    assert rituais[0][1] != rituais[1][1]
+
+
+def test_opcoes_produto_mesmo_nome_e_peso_ainda_distingue():
+    df = pd.DataFrame({
+        "produto_id": [1, 2],
+        "nome": ["Café X", "Café X"],
+        "peso_g": [500.0, 500.0],
+    })
+    opcoes = dados.opcoes_produto(df)
+    assert [pid for pid, _ in opcoes] == [1, 2]
+    assert opcoes[0][1] != opcoes[1][1]

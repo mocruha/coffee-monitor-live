@@ -158,9 +158,12 @@ def grafico(produtos: pd.DataFrame) -> None:
     # Um produto por vez; o de melhor R$/kg já vem selecionado.
     ordenados = produtos.sort_values("nome").reset_index(drop=True)
     padrao = int(ordenados["preco_por_kg"].idxmin()) if ordenados["preco_por_kg"].notna().any() else 0
-    escolhido = st.selectbox("Produto", ordenados["nome"].tolist(), index=padrao)
+    opcoes = dados.opcoes_produto(ordenados)
+    escolhido = st.selectbox("Produto", [rotulo for _, rotulo in opcoes], index=padrao)
 
-    linha = ordenados[ordenados["nome"] == escolhido].iloc[0]
+    # seleciona pelo `produto_id`, não pelo nome: há homônimos na listagem
+    produto_id = {rotulo: pid for pid, rotulo in opcoes}[escolhido]
+    linha = ordenados[ordenados["produto_id"] == produto_id].iloc[0]
     sem_peso = pd.isna(linha["peso_g"])
 
     # Uma linha por dia (a última coleta do dia), com cache. Assim as coletas das

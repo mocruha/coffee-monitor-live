@@ -147,6 +147,27 @@ def _na_faixa(serie: pd.Series, faixa: tuple[float, float] | None) -> pd.Series:
     return serie.isna() | serie.between(*faixa)
 
 
+def opcoes_produto(produtos: pd.DataFrame) -> list[tuple[int, str]]:
+    """(produto_id, rótulo) para o selectbox do gráfico — nunca repete rótulo.
+
+    `nome` não é único no schema (a chave é a `url`); na listagem real há dois
+    pares de homônimos. Sem desambiguar, o selectbox mostra a mesma etiqueta
+    duas vezes e o histórico do segundo produto fica inalcançável.
+    """
+    contagem = produtos["nome"].value_counts()
+    rotulos = [
+        f"{linha['nome']} · {formatar_peso(linha['peso_g'])}"
+        if contagem[linha["nome"]] > 1 else linha["nome"]
+        for _, linha in produtos.iterrows()
+    ]
+    repetidos = {r for r in rotulos if rotulos.count(r) > 1}  # mesmo nome e mesmo peso
+    ids = [int(i) for i in produtos["produto_id"]]
+    return [
+        (pid, f"{rotulo} · #{pid}" if rotulo in repetidos else rotulo)
+        for pid, rotulo in zip(ids, rotulos)
+    ]
+
+
 def filtrar(
     produtos: pd.DataFrame,
     *,
