@@ -282,3 +282,40 @@ def test_opcoes_produto_mesmo_nome_e_peso_ainda_distingue():
     opcoes = dados.opcoes_produto(df)
     assert [pid for pid, _ in opcoes] == [1, 2]
     assert opcoes[0][1] != opcoes[1][1]
+
+
+# --- C-4: preço atual vs piso histórico do próprio produto ---
+
+def test_pct_sobre_piso_usa_o_historico_completo(banco):
+    """`MIN() OVER` precisa rodar na CTE, antes do filtro `posicao = 1`.
+
+    Se viesse depois, o piso seria o preço de hoje e todo mundo ficaria em 0%.
+    """
+    df = dados.carregar_produtos(banco)
+    queda = df[df["variacao_pct"] < 0].iloc[0]
+    assert queda["pct_sobre_piso"] == pytest.approx(0.0)
+
+    alta = df[df["variacao_pct"] > 0].iloc[0]
+    esperado = 100 * (alta["preco"] / alta["preco_anterior"] - 1)
+    assert alta["pct_sobre_piso"] == pytest.approx(esperado, abs=0.01)
+
+
+def test_piso_nao_sobe_quando_o_preco_sobe(engine, cards):
+    """O piso é o menor preço já registrado; ficar acima dele é o indicador de "compro agora?"""
+    alvo = list(cards)[2]
+    preco_inicial = cards[alvo]["preco"]
+    terceira = datetime(2026, 10, 15, 20, 0, tzinfo=timezone.utc)
+
+    with Session(engine) as sessao:
+        persistencia.persistir(sessao, cards, PRIMEIRA)
+        sessao.commit()
+        persistencia.persistir(sessao, {**cards, alvo: {**cards[alvo], "preco": preco_inicial + 10}}, SEGUNDA)
+        sessao.commit()
+        persistencia.persistir(sessao, {**cards, alvo: {**cards[alvo], "preco": preco_inicial + 20}}, terceira)
+        sessao.commit()
+        produto_id = sessao.query(models.Produto.id).filter_by(url=alvo).scalar()
+
+    df = dados.carregar_produtos(engine)
+    linha = df[df["produto_id"] == produto_id].iloc[0]
+    assert linha["preco_piso"] == pytest.approx(preco_inicial, abs=0.01)
+    assert linha["pct_sobre_piso"] == pytest.approx(100 * 20 / preco_inicial, abs=0.01)

@@ -36,7 +36,10 @@ WITH historico AS (
            em_promocao,
            ROW_NUMBER() OVER (PARTITION BY produto_id ORDER BY data_coleta DESC) AS posicao,
            LAG(preco) OVER (PARTITION BY produto_id ORDER BY data_coleta) AS preco_anterior,
-           LAG(data_coleta) OVER (PARTITION BY produto_id ORDER BY data_coleta) AS data_anterior
+           LAG(data_coleta) OVER (PARTITION BY produto_id ORDER BY data_coleta) AS data_anterior,
+           -- piso histórico: MIN() na CTE, ANTES do filtro posicao = 1.
+           -- Depois do filtro cada produto teria uma linha só e o piso seria o preço de hoje.
+           MIN(preco) OVER (PARTITION BY produto_id) AS preco_piso
     FROM precos
 )
 SELECT p.id            AS produto_id,
@@ -50,7 +53,8 @@ SELECT p.id            AS produto_id,
        h.em_promocao      AS em_promocao,
        h.data_coleta      AS data_coleta,
        h.preco_anterior   AS preco_anterior,
-       h.data_anterior    AS data_anterior
+       h.data_anterior    AS data_anterior,
+       h.preco_piso       AS preco_piso
 FROM historico h
 JOIN produtos p ON p.id = h.produto_id
 WHERE h.posicao = 1
@@ -211,6 +215,8 @@ def carregar_produtos(engine: Engine | None = None) -> pd.DataFrame:
         / df.loc[tem_anterior, "preco_anterior"]
     ).round(2)
     df["variacao_abs"] = (df["preco"] - df["preco_anterior"]).round(2)
+    # quanto o preço de hoje está acima do menor preço já registrado para o produto
+    df["pct_sobre_piso"] = ((df["preco"] / df["preco_piso"] - 1) * 100).round(2)
     df["em_promocao"] = df["em_promocao"].astype(bool)
     df["ativo"] = df["ativo"].astype(bool)
     df["atualizado_em"] = _localizar(df["data_coleta"])

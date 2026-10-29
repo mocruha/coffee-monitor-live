@@ -101,6 +101,10 @@ def tabela(produtos: pd.DataFrame) -> None:
         "preco_anterior": st.column_config.NumberColumn("Preço anterior", format="R$ %.2f"),
         "variacao_txt": st.column_config.TextColumn(
             "Variação", help="Contra a coleta anterior registrada (pode ser de mais de um dia atrás)"),
+        "pct_sobre_piso": st.column_config.NumberColumn(
+            "Acima do piso", format="%+.2f%%",
+            help="Quanto o preço atual está acima do menor preço já registrado deste produto "
+                 "(o piso inclui preços promocionais)"),
         "preco_por_kg": st.column_config.NumberColumn("R$/kg", format="R$ %.2f"),
         "em_promocao": st.column_config.CheckboxColumn("Promoção"),
         "atualizado_em": st.column_config.DatetimeColumn("Coleta", format="DD/MM/YYYY HH:mm"),
