@@ -216,7 +216,11 @@ def carregar_produtos(engine: Engine | None = None) -> pd.DataFrame:
     ).round(2)
     df["variacao_abs"] = (df["preco"] - df["preco_anterior"]).round(2)
     # quanto o preço de hoje está acima do menor preço já registrado para o produto
-    df["pct_sobre_piso"] = ((df["preco"] / df["preco_piso"] - 1) * 100).round(2)
+    com_piso = df["preco_piso"] > 0
+    df["pct_sobre_piso"] = pd.NA
+    df.loc[com_piso, "pct_sobre_piso"] = (
+        (df.loc[com_piso, "preco"] / df.loc[com_piso, "preco_piso"] - 1) * 100
+    ).round(2)
     df["em_promocao"] = df["em_promocao"].astype(bool)
     df["ativo"] = df["ativo"].astype(bool)
     df["atualizado_em"] = _localizar(df["data_coleta"])

@@ -319,3 +319,12 @@ def test_piso_nao_sobe_quando_o_preco_sobe(engine, cards):
     linha = df[df["produto_id"] == produto_id].iloc[0]
     assert linha["preco_piso"] == pytest.approx(preco_inicial, abs=0.01)
     assert linha["pct_sobre_piso"] == pytest.approx(100 * 20 / preco_inicial, abs=0.01)
+
+
+def test_busca_e_texto_literal_nao_regex(banco):
+    """N-1: sem `regex=False`, digitar '(' ou '+' no campo de busca derrubava a página."""
+    df = dados.carregar_produtos(banco)
+    assert dados.filtrar(df, busca="(").empty
+    # '+' existe em "Coffee++": a busca é literal, não regex ('+' sozinho seria "uma ou mais")
+    assert len(dados.filtrar(df, busca="+")) == 2
+    assert len(dados.filtrar(df, busca="rituais")) == 4  # Expresso, Grão (2 homônimos) e Clássico
