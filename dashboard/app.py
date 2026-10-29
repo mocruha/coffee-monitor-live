@@ -39,16 +39,23 @@ def carregar_historico(produto_id: int) -> pd.DataFrame:
 
 
 def barra_de_status(coletas: pd.DataFrame, resumo: dict) -> None:
-    if coletas.empty:
-        st.info("Nenhuma coleta registrada ainda. A coleta roda no GitHub Actions, 1x/dia às 20h (horário de Brasília).")
-        return
-    ultima = resumo["ultima_coleta"]
-    quando = ultima.strftime("%d/%m/%Y %H:%M") if ultima is not None else "—"
-    if resumo["ultimo_status"] == "ok":
-        st.caption(f"Última coleta: {quando} (horário de Brasília) — status **ok**")
-    else:
-        st.error(f"Última coleta: {quando} — status **{resumo['ultimo_status']}**. "
-                 f"Veja o histórico do workflow no GitHub Actions.")
+    col_status, col_botao = st.columns([5, 1])
+    with col_botao:
+        if st.button("↻ Atualizar", help="Relê o banco agora (descarta o cache de 1 h)",
+                     width="stretch"):
+            st.cache_data.clear()
+            st.rerun()
+    with col_status:
+        if coletas.empty:
+            st.info("Nenhuma coleta registrada ainda. A coleta roda no GitHub Actions, 1x/dia às 20h (horário de Brasília).")
+            return
+        ultima = resumo["ultima_coleta"]
+        quando = ultima.strftime("%d/%m/%Y %H:%M") if ultima is not None else "—"
+        if resumo["ultimo_status"] == "ok":
+            st.caption(f"Última coleta: {quando} (horário de Brasília) — status **ok**")
+        else:
+            st.error(f"Última coleta: {quando} — status **{resumo['ultimo_status']}**. "
+                     f"Veja o histórico do workflow no GitHub Actions.")
 
 
 def sidebar(produtos: pd.DataFrame) -> pd.DataFrame:
