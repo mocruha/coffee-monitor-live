@@ -206,3 +206,125 @@ def test_agregar_periodo_semana_e_mes():
     mes = dados.agregar_periodo(h, "Mês")
     assert len(mes) == 1
     assert mes["preco"].iloc[0] == pytest.approx((10 + 21 + 30) / 3)
+
+
+# --- Filtros do painel: produto sem peso não pode desaparecer (PR fix/A-1) ---
+
+def _sem_peso(df: pd.DataFrame) -> tuple[pd.DataFrame, int]:
+    """Simula a loja removendo o peso do título: `peso_g` e `preco_por_kg` viram NaN.
+
+    É o cenário do bug A-1: o produto continua ativo e coletado, mas sem R$/kg.
+    """
+    alterado = df.copy()
+    alvo = alterado[alterado["ativo"]].index[0]
+    alterado.loc[alvo, "peso_g"] = pd.NA
+    alterado.loc[alvo, "preco_por_kg"] = pd.NA
+    return alterado, int(alterado.loc[alvo, "produto_id"])
+
+
+def test_filtro_nao_esconde_produto_sem_peso(banco):
+    """Regressão A-1: `between` devolve False para NaN e sumia com o produto de todas as abas."""
+    df = dados.carregar_produtos(banco)
+    alterado, alvo = _sem_peso(df)
+    ativos = alterado[alterado["ativo"]]
+
+    filtrado = dados.filtrar(ativos, faixa_kg=(ativos["preco_por_kg"].min(), ativos["preco_por_kg"].max()))
+    assert alvo in set(filtrado["produto_id"]), "produto sem peso sumiu do filtro de R$/kg"
+
+    # estreitar a faixa de R$/kg também não pode esconder: desconhecido não é "fora da faixa"
+    estreitado = dados.filtrar(ativos, faixa_kg=(500.0, 600.0))
+    assert alvo in set(estreitado["produto_id"])
+
+
+def test_formatar_peso_nulo_nao_vira_nang():
+    """R-2: f'{float('nan')}g' renderiza 'nang' na UI."""
+    assert dados.formatar_peso(None) == "peso não informado"
+    assert dados.formatar_peso(float("nan")) == "peso não informado"
+    assert dados.formatar_peso(250) == "250g"
+    assert dados.formatar_peso(1000) == "1kg"
+    # A-6: peso acima de 1 kg não pode virar "1kg"
+    assert dados.formatar_peso(1500) == "1,5kg"
+
+
+def test_filtro_de_peso_e_marca_continuam_funcionando(banco):
+    df = dados.carregar_produtos(banco)
+    ativos = df[df["ativo"]]
+    duzentos_e_cinquenta = dados.filtrar(ativos, pesos=[250])
+    assert set(duzentos_e_cinquenta["peso_g"]) == {250}
+
+    marca = ativos["marca"].dropna().iloc[0]
+    da_marca = dados.filtrar(ativos, marcas=[marca])
+    assert set(da_marca["marca"]) == {marca}
+
+
+# --- Gráfico: produtos homônimos precisam de rótulo único (A-2) ---
+
+def test_opcoes_produto_nao_colidem_com_homonimos(banco):
+    """`nome` não é único (a chave é a url): 2 pares reais na listagem."""
+    df = dados.carregar_produtos(banco)
+    opcoes = dados.opcoes_produto(df[df["ativo"]])
+
+    assert len(opcoes) == 51
+    rotulos = [rotulo for _, rotulo in opcoes]
+    assert len(set(rotulos)) == len(rotulos), "rótulos repetidos: o selectbox esconde produtos"
+
+    rituais = [(pid, r) for pid, r in opcoes if r.startswith("Café Rituais Grão 3 Corações")]
+    assert len(rituais) == 2, "os dois homônimos devem aparecer"
+    assert rituais[0][1] != rituais[1][1]
+
+
+def test_opcoes_produto_mesmo_nome_e_peso_ainda_distingue():
+    df = pd.DataFrame({
+        "produto_id": [1, 2],
+        "nome": ["Café X", "Café X"],
+        "peso_g": [500.0, 500.0],
+    })
+    opcoes = dados.opcoes_produto(df)
+    assert [pid for pid, _ in opcoes] == [1, 2]
+    assert opcoes[0][1] != opcoes[1][1]
+
+
+# --- C-4: preço atual vs piso histórico do próprio produto ---
+
+def test_pct_sobre_piso_usa_o_historico_completo(banco):
+    """`MIN() OVER` precisa rodar na CTE, antes do filtro `posicao = 1`.
+
+    Se viesse depois, o piso seria o preço de hoje e todo mundo ficaria em 0%.
+    """
+    df = dados.carregar_produtos(banco)
+    queda = df[df["variacao_pct"] < 0].iloc[0]
+    assert queda["pct_sobre_piso"] == pytest.approx(0.0)
+
+    alta = df[df["variacao_pct"] > 0].iloc[0]
+    esperado = 100 * (alta["preco"] / alta["preco_anterior"] - 1)
+    assert alta["pct_sobre_piso"] == pytest.approx(esperado, abs=0.01)
+
+
+def test_piso_nao_sobe_quando_o_preco_sobe(engine, cards):
+    """O piso é o menor preço já registrado; ficar acima dele é o indicador de "compro agora?"""
+    alvo = list(cards)[2]
+    preco_inicial = cards[alvo]["preco"]
+    terceira = datetime(2026, 10, 15, 20, 0, tzinfo=timezone.utc)
+
+    with Session(engine) as sessao:
+        persistencia.persistir(sessao, cards, PRIMEIRA)
+        sessao.commit()
+        persistencia.persistir(sessao, {**cards, alvo: {**cards[alvo], "preco": preco_inicial + 10}}, SEGUNDA)
+        sessao.commit()
+        persistencia.persistir(sessao, {**cards, alvo: {**cards[alvo], "preco": preco_inicial + 20}}, terceira)
+        sessao.commit()
+        produto_id = sessao.query(models.Produto.id).filter_by(url=alvo).scalar()
+
+    df = dados.carregar_produtos(engine)
+    linha = df[df["produto_id"] == produto_id].iloc[0]
+    assert linha["preco_piso"] == pytest.approx(preco_inicial, abs=0.01)
+    assert linha["pct_sobre_piso"] == pytest.approx(100 * 20 / preco_inicial, abs=0.01)
+
+
+def test_busca_e_texto_literal_nao_regex(banco):
+    """N-1: sem `regex=False`, digitar '(' ou '+' no campo de busca derrubava a página."""
+    df = dados.carregar_produtos(banco)
+    assert dados.filtrar(df, busca="(").empty
+    # '+' existe em "Coffee++": a busca é literal, não regex ('+' sozinho seria "uma ou mais")
+    assert len(dados.filtrar(df, busca="+")) == 2
+    assert len(dados.filtrar(df, busca="rituais")) == 4  # Expresso, Grão (2 homônimos) e Clássico

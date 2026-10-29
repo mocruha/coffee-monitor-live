@@ -39,16 +39,23 @@ def carregar_historico(produto_id: int) -> pd.DataFrame:
 
 
 def barra_de_status(coletas: pd.DataFrame, resumo: dict) -> None:
-    if coletas.empty:
-        st.info("Nenhuma coleta registrada ainda. A coleta roda no GitHub Actions, 1x/dia às 20h (horário de Brasília).")
-        return
-    ultima = resumo["ultima_coleta"]
-    quando = ultima.strftime("%d/%m/%Y %H:%M") if ultima is not None else "—"
-    if resumo["ultimo_status"] == "ok":
-        st.caption(f"Última coleta: {quando} (horário de Brasília) — status **ok**")
-    else:
-        st.error(f"Última coleta: {quando} — status **{resumo['ultimo_status']}**. "
-                 f"Veja o histórico do workflow no GitHub Actions.")
+    col_status, col_botao = st.columns([5, 1])
+    with col_botao:
+        if st.button("↻ Atualizar", help="Relê o banco agora (descarta o cache de 1 h)",
+                     width="stretch"):
+            st.cache_data.clear()
+            st.rerun()
+    with col_status:
+        if coletas.empty:
+            st.info("Nenhuma coleta registrada ainda. A coleta roda no GitHub Actions, 1x/dia às 20h (horário de Brasília).")
+            return
+        ultima = resumo["ultima_coleta"]
+        quando = ultima.strftime("%d/%m/%Y %H:%M") if ultima is not None else "—"
+        if resumo["ultimo_status"] == "ok":
+            st.caption(f"Última coleta: {quando} (horário de Brasília) — status **ok**")
+        else:
+            st.error(f"Última coleta: {quando} — status **{resumo['ultimo_status']}**. "
+                     f"Veja o histórico do workflow no GitHub Actions.")
 
 
 def sidebar(produtos: pd.DataFrame) -> pd.DataFrame:
@@ -58,32 +65,28 @@ def sidebar(produtos: pd.DataFrame) -> pd.DataFrame:
     busca = st.sidebar.text_input("Buscar por nome", placeholder="ex.: orfeu, zaro, nanolote")
     marcas = sorted(m for m in ativos["marca"].dropna().unique())
     marca = st.sidebar.multiselect("Marca", marcas)
-    pesos = sorted(int(p) for p in ativos["peso_g"].dropna().unique())
-    peso = st.sidebar.multiselect("Peso", [f"{p}g" if p < 1000 else "1kg" for p in pesos],
-                                  help="Pesos existentes na categoria")
+    por_rotulo = {dados.formatar_peso(p): p for p in ativos["peso_g"].dropna().unique()}
+    peso = [por_rotulo[r] for r in
+            st.sidebar.multiselect("Peso", sorted(por_rotulo), help="Pesos existentes na categoria")]
 
+    faixa = faixa_kg = None
     if not ativos.empty:
         minimo, maximo = float(ativos["preco"].min()), float(ativos["preco"].max())
         faixa = st.sidebar.slider("Faixa de preço (R$)", minimo, maximo, (minimo, maximo), step=1.0)
-        kg_min, kg_max = float(ativos["preco_por_kg"].min()), float(ativos["preco_por_kg"].max())
-        faixa_kg = st.sidebar.slider("Faixa de R$/kg", kg_min, kg_max, (kg_min, kg_max), step=1.0)
-    else:
-        faixa = faixa_kg = (0.0, 0.0)
+        # produtos sem peso têm R$/kg desconhecido: sem este dropna o slider recebe NaN
+        com_kg = ativos["preco_por_kg"].dropna()
+        if not com_kg.empty:
+            kg_min, kg_max = float(com_kg.min()), float(com_kg.max())
+            faixa_kg = st.sidebar.slider("Faixa de R$/kg", kg_min, kg_max, (kg_min, kg_max), step=1.0,
+                                         help="Produtos sem peso cadastrado continuam na lista "
+                                              "(R$/kg não calculável).")
 
     so_promo = st.sidebar.checkbox("Somente promoções")
 
-    filtrado = ativos.copy()
-    if busca:
-        filtrado = filtrado[filtrado["nome"].str.contains(busca, case=False, na=False)]
-    if marca:
-        filtrado = filtrado[filtrado["marca"].isin(marca)]
-    if peso:
-        alvos = {1000 if p == "1kg" else int(p.rstrip("g")) for p in peso}
-        filtrado = filtrado[filtrado["peso_g"].isin(alvos)]
-    filtrado = filtrado[filtrado["preco"].between(*faixa)]
-    filtrado = filtrado[filtrado["preco_por_kg"].between(*faixa_kg)]
-    if so_promo:
-        filtrado = filtrado[filtrado["em_promocao"]]
+    filtrado = dados.filtrar(
+        ativos, busca=busca, marcas=marca, pesos=peso,
+        faixa_preco=faixa, faixa_kg=faixa_kg, so_promo=so_promo,
+    )
 
     st.sidebar.caption(f"{len(filtrado)} de {len(produtos)} produtos")
     return filtrado
@@ -98,6 +101,10 @@ def tabela(produtos: pd.DataFrame) -> None:
         "preco_anterior": st.column_config.NumberColumn("Preço anterior", format="R$ %.2f"),
         "variacao_txt": st.column_config.TextColumn(
             "Variação", help="Contra a coleta anterior registrada (pode ser de mais de um dia atrás)"),
+        "pct_sobre_piso": st.column_config.NumberColumn(
+            "Acima do piso", format="%+.2f%%",
+            help="Quanto o preço atual está acima do menor preço já registrado deste produto "
+                 "(o piso inclui preços promocionais)"),
         "preco_por_kg": st.column_config.NumberColumn("R$/kg", format="R$ %.2f"),
         "em_promocao": st.column_config.CheckboxColumn("Promoção"),
         "atualizado_em": st.column_config.DatetimeColumn("Coleta", format="DD/MM/YYYY HH:mm"),
@@ -148,7 +155,7 @@ def tabela(produtos: pd.DataFrame) -> None:
             st.markdown(
                 f"**{linha['nome']}** — de {dados.formatar_brl_md(linha['preco_original'])} "
                 f"por {dados.formatar_brl_md(linha['preco'])} ({desconto:.0f}% off) · "
-                f"{linha['peso_g']}g · {dados.formatar_brl_md(linha['preco_por_kg'])}/kg"
+                f"{dados.formatar_peso(linha['peso_g'])} · {dados.formatar_brl_md(linha['preco_por_kg'])}/kg"
             )
 
 
@@ -162,9 +169,12 @@ def grafico(produtos: pd.DataFrame) -> None:
     # Um produto por vez; o de melhor R$/kg já vem selecionado.
     ordenados = produtos.sort_values("nome").reset_index(drop=True)
     padrao = int(ordenados["preco_por_kg"].idxmin()) if ordenados["preco_por_kg"].notna().any() else 0
-    escolhido = st.selectbox("Produto", ordenados["nome"].tolist(), index=padrao)
+    opcoes = dados.opcoes_produto(ordenados)
+    escolhido = st.selectbox("Produto", [rotulo for _, rotulo in opcoes], index=padrao)
 
-    linha = ordenados[ordenados["nome"] == escolhido].iloc[0]
+    # seleciona pelo `produto_id`, não pelo nome: há homônimos na listagem
+    produto_id = {rotulo: pid for pid, rotulo in opcoes}[escolhido]
+    linha = ordenados[ordenados["produto_id"] == produto_id].iloc[0]
     sem_peso = pd.isna(linha["peso_g"])
 
     # Uma linha por dia (a última coleta do dia), com cache. Assim as coletas das
@@ -173,7 +183,10 @@ def grafico(produtos: pd.DataFrame) -> None:
     if len(historico) < 2:
         st.info("Menos de duas coletas diárias para este produto — a evolução aparece a partir da segunda.")
         return
-    historico = historico.assign(preco_kg=historico["preco"] / linha["peso_g"] * 1000)
+    if sem_peso:
+        historico = historico.assign(preco_kg=float("nan"))
+    else:
+        historico = historico.assign(preco_kg=historico["preco"] / linha["peso_g"] * 1000)
 
     col_gran, col_met = st.columns(2)
     with col_gran:
@@ -214,16 +227,16 @@ def destaques(produtos: pd.DataFrame) -> None:
             for _, linha in quedas.iterrows():
                 st.markdown(
                     f"**{dados.formatar_pct(linha['variacao_pct'])}** · {linha['nome']} "
-                    f"({linha['peso_g']}g) — {dados.formatar_brl_md(linha['preco_anterior'])} → "
+                    f"({dados.formatar_peso(linha['peso_g'])}) — {dados.formatar_brl_md(linha['preco_anterior'])} → "
                     f"{dados.formatar_brl_md(linha['preco'])}"
                 )
 
     with direita:
         st.subheader("Menor preço por quilo")
-        for _, linha in produtos.sort_values("preco_por_kg").head(10).iterrows():
+        for _, linha in produtos.dropna(subset=["preco_por_kg"]).sort_values("preco_por_kg").head(10).iterrows():
             st.markdown(
                 f"**{dados.formatar_brl_md(linha['preco_por_kg'])}/kg** · {linha['nome']} "
-                f"({linha['peso_g']}g) — {dados.formatar_brl_md(linha['preco'])}"
+                f"({dados.formatar_peso(linha['peso_g'])}) — {dados.formatar_brl_md(linha['preco'])}"
             )
 
     parados = produtos[produtos["variacao_pct"].isna()]

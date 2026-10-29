@@ -374,14 +374,14 @@ on:
 
 ### 7.4 Dashboard
 
-- Carregar dados com pandas + cache `@st.cache_data(ttl=3600)`.
+- Carregar dados com pandas + cache `@st.cache_data(ttl=3600)`; o botão **↻ Atualizar** na barra de status limpa o cache e relê o banco (a coleta das 20h não espera a hora do cache expirar).
 - Conexão via `st.secrets["DATABASE_URL"]` (fallback para a variável de ambiente).
 - **Somente leitura:** o painel nunca escreve — a garantia é de política, e há um
   teste que varre `dashboard/dados.py` por comandos de escrita
   (`test_dashboard_nao_escreve`).
-- Filtros na sidebar: peso, marca, faixa de preço, faixa de R$/kg, "somente promoção" e busca por nome.
-- Tabela principal (apenas produtos na listagem; os inativos ficam no banco, com histórico): nome, marca, peso, preço atual, **preço por kg** (`preco / peso_g * 1000`), variação % contra a coleta anterior (↑/↓) e badge de promoção. Ordenação por um dropdown (Variação, Preço, R$/kg, Peso, Nome) + seletor ascendente/descendente.
-- Gráfico de linha: evolução do preço de **um produto por vez**, com granularidade escolhida (dia, semana ou mês) e agregação pela média do período. Usa a **última coleta de cada dia** (`dados.ultima_por_dia`) — no histórico antigo isso é a das 20h; as coletas das 08h ficam no banco mas não entram no gráfico. A agregação vive em `dados.agregar_periodo`.
+- Filtros na sidebar: peso, marca, faixa de preço, faixa de R$/kg, "somente promoção" e busca por nome (texto literal, sem regex). A lógica vive em `dados.filtrar` para ser testável. Produto **sem peso** continua visível (R$/kg em branco) — valor desconhecido nunca é tratado como "fora da faixa", e `dados.formatar_peso` é o único formatador de peso (evita `nang`).
+- Tabela principal (apenas produtos na listagem; os inativos ficam no banco, com histórico): nome, marca, peso, preço atual, **preço por kg** (`preco / peso_g * 1000`), variação % contra a coleta anterior (↑/↓), **"Acima do piso"** (quanto o preço está acima do menor preço já registrado do produto) e badge de promoção. Ordenação por um dropdown (Variação, Preço, R$/kg, Peso, Nome) + seletor ascendente/descendente.
+- Gráfico de linha: evolução do preço de **um produto por vez**, com granularidade escolhida (dia, semana ou mês) e agregação pela média do período. O selectbox usa `dados.opcoes_produto` (rótulo único — há homônimos na listagem) e busca o histórico pelo `produto_id`. Usa a **última coleta de cada dia** (`dados.ultima_por_dia`) — no histórico antigo isso é a das 20h; as coletas das 08h ficam no banco mas não entram no gráfico. A agregação vive em `dados.agregar_periodo`.
 - Destaques: maiores quedas, promoções ativas e menor R$/kg.
 
 ### 7.5 Regras de Segurança (obrigatórias)

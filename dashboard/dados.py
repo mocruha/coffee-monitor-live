@@ -36,7 +36,10 @@ WITH historico AS (
            em_promocao,
            ROW_NUMBER() OVER (PARTITION BY produto_id ORDER BY data_coleta DESC) AS posicao,
            LAG(preco) OVER (PARTITION BY produto_id ORDER BY data_coleta) AS preco_anterior,
-           LAG(data_coleta) OVER (PARTITION BY produto_id ORDER BY data_coleta) AS data_anterior
+           LAG(data_coleta) OVER (PARTITION BY produto_id ORDER BY data_coleta) AS data_anterior,
+           -- piso histórico: MIN() na CTE, ANTES do filtro posicao = 1.
+           -- Depois do filtro cada produto teria uma linha só e o piso seria o preço de hoje.
+           MIN(preco) OVER (PARTITION BY produto_id) AS preco_piso
     FROM precos
 )
 SELECT p.id            AS produto_id,
@@ -50,7 +53,8 @@ SELECT p.id            AS produto_id,
        h.em_promocao      AS em_promocao,
        h.data_coleta      AS data_coleta,
        h.preco_anterior   AS preco_anterior,
-       h.data_anterior    AS data_anterior
+       h.data_anterior    AS data_anterior,
+       h.preco_piso       AS preco_piso
 FROM historico h
 JOIN produtos p ON p.id = h.produto_id
 WHERE h.posicao = 1
@@ -122,6 +126,78 @@ def formatar_pct(valor: float | None) -> str:
     return f"{valor:+.2f}".replace(".", ",") + "%"
 
 
+def formatar_peso(peso_g: float | None) -> str:
+    """250 -> '250g', 1000 -> '1kg', 1500 -> '1,5kg'; None/NaN -> texto explicativo.
+
+    Sem isso, `f"{float('nan')}g"` imprime literalmente "nang" na tela.
+    """
+    if peso_g is None or pd.isna(peso_g):
+        return "peso não informado"
+    valor = float(peso_g)
+    if valor < 1000:
+        return f"{valor:g}g"
+    return f"{valor / 1000:g}".replace(".", ",") + "kg"
+
+
+def _na_faixa(serie: pd.Series, faixa: tuple[float, float] | None) -> pd.Series:
+    """Máscara de faixa que **não descarta** valor desconhecido (`NaN`).
+
+    `Series.between` devolve `False` para `NaN`, então um produto sem peso
+    (R$/kg desconhecido) desaparecia de todas as abas mesmo com o slider na
+    faixa completa. Desconhecido não é "fora da faixa".
+    """
+    if faixa is None:
+        return pd.Series(True, index=serie.index)
+    return serie.isna() | serie.between(*faixa)
+
+
+def opcoes_produto(produtos: pd.DataFrame) -> list[tuple[int, str]]:
+    """(produto_id, rótulo) para o selectbox do gráfico — nunca repete rótulo.
+
+    `nome` não é único no schema (a chave é a `url`); na listagem real há dois
+    pares de homônimos. Sem desambiguar, o selectbox mostra a mesma etiqueta
+    duas vezes e o histórico do segundo produto fica inalcançável.
+    """
+    contagem = produtos["nome"].value_counts()
+    rotulos = [
+        f"{linha['nome']} · {formatar_peso(linha['peso_g'])}"
+        if contagem[linha["nome"]] > 1 else linha["nome"]
+        for _, linha in produtos.iterrows()
+    ]
+    repetidos = {r for r in rotulos if rotulos.count(r) > 1}  # mesmo nome e mesmo peso
+    ids = [int(i) for i in produtos["produto_id"]]
+    return [
+        (pid, f"{rotulo} · #{pid}" if rotulo in repetidos else rotulo)
+        for pid, rotulo in zip(ids, rotulos)
+    ]
+
+
+def filtrar(
+    produtos: pd.DataFrame,
+    *,
+    busca: str = "",
+    marcas: list[str] | None = None,
+    pesos: list[int] | None = None,
+    faixa_preco: tuple[float, float] | None = None,
+    faixa_kg: tuple[float, float] | None = None,
+    so_promo: bool = False,
+) -> pd.DataFrame:
+    """Aplica os filtros da sidebar. Vive aqui (e não no `app.py`) para ser testável."""
+    filtrado = produtos
+    if busca:
+        # regex=False: a busca é texto literal; sem isso, "(" ou "+" derrubam a página
+        filtrado = filtrado[filtrado["nome"].str.contains(busca, case=False, na=False, regex=False)]
+    if marcas:
+        filtrado = filtrado[filtrado["marca"].isin(marcas)]
+    if pesos:
+        filtrado = filtrado[filtrado["peso_g"].isin(pesos)]
+    filtrado = filtrado[_na_faixa(filtrado["preco"], faixa_preco)]
+    filtrado = filtrado[_na_faixa(filtrado["preco_por_kg"], faixa_kg)]
+    if so_promo:
+        filtrado = filtrado[filtrado["em_promocao"]]
+    return filtrado
+
+
 def carregar_produtos(engine: Engine | None = None) -> pd.DataFrame:
     """Um registro por produto com o preço atual e a variação contra a coleta anterior."""
     engine = engine or criar_engine()
@@ -139,6 +215,12 @@ def carregar_produtos(engine: Engine | None = None) -> pd.DataFrame:
         / df.loc[tem_anterior, "preco_anterior"]
     ).round(2)
     df["variacao_abs"] = (df["preco"] - df["preco_anterior"]).round(2)
+    # quanto o preço de hoje está acima do menor preço já registrado para o produto
+    com_piso = df["preco_piso"] > 0
+    df["pct_sobre_piso"] = pd.NA
+    df.loc[com_piso, "pct_sobre_piso"] = (
+        (df.loc[com_piso, "preco"] / df.loc[com_piso, "preco_piso"] - 1) * 100
+    ).round(2)
     df["em_promocao"] = df["em_promocao"].astype(bool)
     df["ativo"] = df["ativo"].astype(bool)
     df["atualizado_em"] = _localizar(df["data_coleta"])
