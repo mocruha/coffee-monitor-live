@@ -187,16 +187,7 @@ def tabela(produtos: pd.DataFrame) -> None:
         st.caption(f"{int(longe.sum())} produto(s) comparam com uma coleta de mais de um dia atrás "
                    f"(houve dia sem coleta).")
 
-    promocoes = produtos[produtos["em_promocao"]]
-    if not promocoes.empty:
-        st.subheader("Promoções ativas")
-        for _, linha in promocoes.iterrows():
-            desconto = 100 * (1 - linha["preco"] / linha["preco_original"])
-            st.markdown(
-                f"**{linha['nome']}** — de {dados.formatar_brl_md(linha['preco_original'])} "
-                f"por {dados.formatar_brl_md(linha['preco'])} ({desconto:.0f}% off) · "
-                f"{dados.formatar_peso(linha['peso_g'])} · {dados.formatar_brl_md(linha['preco_por_kg'])}/kg"
-            )
+    # As promoções saíram daqui: viraram card na visão geral (evita aparecer três vezes).
 
 
 def grafico(produtos: pd.DataFrame) -> None:
@@ -252,36 +243,88 @@ def grafico(produtos: pd.DataFrame) -> None:
     st.plotly_chart(figura, width="stretch")
 
 
-def destaques(produtos: pd.DataFrame) -> None:
-    com_variacao = produtos[produtos["variacao_pct"].notna()]
+def _card(titulo: str, linhas: list[str], vazio: str, limite: int = 5) -> None:
+    """Um bloco da visão geral: título, até `limite` linhas e aviso quando vazio.
+
+    O corte importa: num catálogo recém-migrado o card de novidades casaria com
+    os 51 produtos e empurraria o resto da página para fora da tela.
+    """
+    with st.container(border=True):
+        st.subheader(titulo)
+        if not linhas:
+            st.caption(vazio)
+            return
+        for linha in linhas[:limite]:
+            st.markdown(linha)
+        if len(linhas) > limite:
+            st.caption(f"+ {len(linhas) - limite} outro(s) — veja a aba **Tabela**.")
+
+
+def visao_geral(coletas: pd.DataFrame, resumo: dict, blocos: dict[str, pd.DataFrame]) -> None:
+    """Home do painel: os seis cards. A tabela tem aba própria e os KPIs ficam
+    na barra fixa do topo.
+
+    Os cards são globais (catálogo inteiro): a sidebar filtra a tabela e o
+    gráfico, mas a visão geral existe para responder "como está a categoria
+    hoje?" de uma vez.
+    """
     esquerda, direita = st.columns(2)
 
+    def variacoes(df: pd.DataFrame) -> list[str]:
+        return [
+            f"**{dados.formatar_pct(l['variacao_pct'])}** · {l['nome']} "
+            f"({dados.formatar_peso(l['peso_g'])}) — {dados.formatar_brl_md(l['preco_anterior'])} → "
+            f"{dados.formatar_brl_md(l['preco'])}"
+            for _, l in df.iterrows()
+        ]
+
+    def sobre_piso(df: pd.DataFrame) -> list[str]:
+        linhas = []
+        for _, l in df.iterrows():
+            desvio = l["pct_sobre_piso"]
+            # 0% significa "está no menor preço já registrado": dizer "0,00% acima" é estranho
+            situacao = ("no **piso histórico**" if pd.isna(desvio) or abs(desvio) < 0.005
+                        else f"**{dados.formatar_pct(desvio)}** acima do piso")
+            linhas.append(
+                f"{situacao} · {l['nome']} ({dados.formatar_peso(l['peso_g'])}) — "
+                f"{dados.formatar_brl_md(l['preco'])}"
+            )
+        return linhas
+
     with esquerda:
-        st.subheader("Maiores quedas desde a coleta anterior")
-        quedas = com_variacao[com_variacao["variacao_pct"] < 0].sort_values("variacao_pct").head(10)
-        if com_variacao.empty:
-            st.info("Nenhuma variação registrada ainda — é preciso pelo menos duas coletas por produto.")
-        elif quedas.empty:
-            st.info("Nenhum produto caiu de preço entre as duas últimas coletas.")
-        else:
-            for _, linha in quedas.iterrows():
-                st.markdown(
-                    f"**{dados.formatar_pct(linha['variacao_pct'])}** · {linha['nome']} "
-                    f"({dados.formatar_peso(linha['peso_g'])}) — {dados.formatar_brl_md(linha['preco_anterior'])} → "
-                    f"{dados.formatar_brl_md(linha['preco'])}"
-                )
+        _card("Maiores quedas", variacoes(blocos["quedas"]),
+              "Nenhuma queda entre as duas últimas coletas.")
+        _card("Maiores altas", variacoes(blocos["altas"]),
+              "Nenhuma alta entre as duas últimas coletas.")
+        _card("Mais perto do piso", sobre_piso(blocos["perto_piso"]),
+              "Sem histórico suficiente para calcular o piso.")
 
     with direita:
-        st.subheader("Menor preço por quilo")
-        for _, linha in produtos.dropna(subset=["preco_por_kg"]).sort_values("preco_por_kg").head(10).iterrows():
-            st.markdown(
-                f"**{dados.formatar_brl_md(linha['preco_por_kg'])}/kg** · {linha['nome']} "
-                f"({dados.formatar_peso(linha['peso_g'])}) — {dados.formatar_brl_md(linha['preco'])}"
-            )
-
-    parados = produtos[produtos["variacao_pct"].isna()]
-    if not parados.empty:
-        st.caption(f"{len(parados)} produtos ainda sem variação calculável (só uma coleta registrada).")
+        _card(
+            f"Promoções ativas ({len(blocos['promocoes'])})",
+            [f"**{l['nome']}** — de {dados.formatar_brl_md(l['preco_original'])} por "
+             f"{dados.formatar_brl_md(l['preco'])} "
+             f"({100 * (1 - l['preco'] / l['preco_original']):.0f}% off) · "
+             f"{dados.formatar_brl_md(l['preco_por_kg'])}/kg"
+             for _, l in blocos["promocoes"].iterrows()],
+            "Nenhum produto com preço de lista acima do preço atual.",
+        )
+        _card(
+            "Novidades (últimos 3 dias)",
+            [f"**{l['nome']}** ({dados.formatar_peso(l['peso_g'])}) — "
+             f"{dados.formatar_brl_md(l['preco'])} · apareceu em {l['primeira_visao']:%d/%m/%Y}"
+             for _, l in blocos["novidades"].iterrows()],
+            "Nenhum produto novo na listagem nos últimos 3 dias.",
+        )
+        with st.container(border=True):
+            st.subheader("Última coleta")
+            if coletas.empty:
+                st.caption("Nenhuma coleta registrada ainda.")
+            elif resumo["ultimo_status"] == "ok":
+                st.markdown(f"Status **ok** · {resumo['dias_ok_7d']} dos últimos 7 dias coletados.")
+                st.caption("O painel relê o banco ao abrir, com cache de 1 h.")
+            else:
+                st.error(f"Status **{resumo['ultimo_status']}** — veja o histórico no GitHub Actions.")
 
 
 def _metric_extremo(coluna, rotulo: str, extremo: tuple[str, float] | None, *, sinal: int,
@@ -334,15 +377,16 @@ def main() -> None:
     c6.metric("Fora da listagem", resumo["inativos"], help="Produtos que já não aparecem na categoria")
 
     filtrado = sidebar(produtos)
-    tabela_aba, evolucao_aba, destaques_aba = st.tabs(
-        ["Produtos", "Evolução de preço", "Destaques"]
+    blocos = dados.cards(produtos)
+    visao_aba, tabela_aba, evolucao_aba = st.tabs(
+        ["Visão geral", "Tabela", "Evolução de preço"]
     )
+    with visao_aba:
+        visao_geral(coletas, resumo, blocos)
     with tabela_aba:
         tabela(filtrado)
     with evolucao_aba:
         grafico(filtrado)
-    with destaques_aba:
-        destaques(filtrado)
 
 
 main()
