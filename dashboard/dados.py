@@ -120,10 +120,20 @@ def formatar_brl_md(valor: float | None) -> str:
 
 
 def formatar_pct(valor: float | None) -> str:
-    """Variação percentual com vírgula decimal e sinal: -20.0 -> '-20,00%'."""
+    """Variação percentual com seta e vírgula decimal: -20.0 -> '▼ -20,00%'.
+
+    A seta dá o sinal visual que o `st.column_config` do Streamlit 1.65 não tem
+    (`format="delta"` não existe): numa tabela de 50+ linhas, "+3%" e "-3%" em
+    texto puro se confundem.
+    """
     if valor is None or pd.isna(valor):
         return "—"
-    return f"{valor:+.2f}".replace(".", ",") + "%"
+    numero = f"{abs(valor):.2f}".replace(".", ",")
+    if valor > 0:
+        return f"▲ +{numero}%"
+    if valor < 0:
+        return f"▼ -{numero}%"
+    return f"{numero}%"
 
 
 def formatar_peso(peso_g: float | None) -> str:
@@ -286,6 +296,7 @@ def resumo(df: pd.DataFrame, coletas: pd.DataFrame) -> dict:
     com_preco = ativos if ativos.empty else ativos[ativos["preco"].notna()]
     quedas = com_preco[com_preco["variacao_pct"].notna()] if not com_preco.empty else com_preco
     maior_queda = quedas.sort_values("variacao_pct").head(1) if not quedas.empty else quedas
+    maior_alta = quedas.sort_values("variacao_pct", ascending=False).head(1) if not quedas.empty else quedas
     return {
         "produtos": len(df),
         "ativos": len(ativos),
@@ -298,6 +309,12 @@ def resumo(df: pd.DataFrame, coletas: pd.DataFrame) -> dict:
         "maior_queda": (
             (maior_queda["nome"].iloc[0], maior_queda["variacao_pct"].iloc[0])
             if not maior_queda.empty
+            else None
+        ),
+        # o extremo oposto: sem ele o painel só sabe falar de queda de preço
+        "maior_alta": (
+            (maior_alta["nome"].iloc[0], maior_alta["variacao_pct"].iloc[0])
+            if not maior_alta.empty
             else None
         ),
         "sem_variacao": int(com_preco["variacao_pct"].isna().sum()) if not com_preco.empty else 0,
