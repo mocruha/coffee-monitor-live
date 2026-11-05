@@ -54,8 +54,27 @@ def barra_de_status(coletas: pd.DataFrame, resumo: dict) -> None:
         if resumo["ultimo_status"] == "ok":
             st.caption(f"Última coleta: {quando} (horário de Brasília) — status **ok**")
         else:
-            st.error(f"Última coleta: {quando} — status **{resumo['ultimo_status']}**. "
+            # a mensagem vem da tabela `coletas` e explica a falha (timeout, 429, guarda...)
+            detalhe = coletas.iloc[0].get("mensagem")
+            extra = f" {detalhe}" if isinstance(detalhe, str) and detalhe.strip() else ""
+            st.error(f"Última coleta: {quando} — status **{resumo['ultimo_status']}**.{extra} "
                      f"Veja o histórico do workflow no GitHub Actions.")
+
+
+def _faixa_slider(rotulo: str, minimo: float, maximo: float, *, ajuda: str | None = None,
+                  formato=dados.formatar_brl) -> tuple[float, float] | None:
+    """Slider de faixa, tolerante a um único valor possível.
+
+    `st.slider` com `min_value == max_value` levanta exceção no Streamlit 1.65 e
+    derruba a página inteira (as abas somem). Com um só valor, mostramos o valor
+    fixo e devolvemos `None` — filtro desligado, que é o comportamento correto:
+    não há faixa a escolher.
+    """
+    if minimo == maximo:
+        st.sidebar.caption(f"{rotulo}: {formato(minimo)}")
+        return None
+    return st.sidebar.slider(rotulo, float(minimo), float(maximo),
+                             (float(minimo), float(maximo)), step=1.0, help=ajuda)
 
 
 def sidebar(produtos: pd.DataFrame) -> pd.DataFrame:
@@ -72,14 +91,15 @@ def sidebar(produtos: pd.DataFrame) -> pd.DataFrame:
     faixa = faixa_kg = None
     if not ativos.empty:
         minimo, maximo = float(ativos["preco"].min()), float(ativos["preco"].max())
-        faixa = st.sidebar.slider("Faixa de preço (R$)", minimo, maximo, (minimo, maximo), step=1.0)
+        faixa = _faixa_slider("Faixa de preço (R$)", minimo, maximo)
         # produtos sem peso têm R$/kg desconhecido: sem este dropna o slider recebe NaN
         com_kg = ativos["preco_por_kg"].dropna()
         if not com_kg.empty:
             kg_min, kg_max = float(com_kg.min()), float(com_kg.max())
-            faixa_kg = st.sidebar.slider("Faixa de R$/kg", kg_min, kg_max, (kg_min, kg_max), step=1.0,
-                                         help="Produtos sem peso cadastrado continuam na lista "
-                                              "(R$/kg não calculável).")
+            faixa_kg = _faixa_slider(
+                "Faixa de R$/kg", kg_min, kg_max,
+                ajuda="Produtos sem peso cadastrado continuam na lista (R$/kg não calculável).",
+            )
 
     so_promo = st.sidebar.checkbox("Somente promoções")
 
@@ -88,8 +108,24 @@ def sidebar(produtos: pd.DataFrame) -> pd.DataFrame:
         faixa_preco=faixa, faixa_kg=faixa_kg, so_promo=so_promo,
     )
 
-    st.sidebar.caption(f"{len(filtrado)} de {len(produtos)} produtos")
+    # denominador = só ativos: `produtos` inclui os que já saíram da listagem
+    st.sidebar.caption(f"{len(filtrado)} de {len(ativos)} produtos")
     return filtrado
+
+
+VERDE_QUEDA = "#1a7f37"
+VERMELHO_ALTA = "#c62828"
+
+
+def _pintar_variacao(texto: str) -> str:
+    """Verde para queda de preço, vermelho para alta (perspectiva de quem compra)."""
+    if not isinstance(texto, str):
+        return ""
+    if texto.startswith("▼"):
+        return f"color: {VERDE_QUEDA}; font-weight: 600"
+    if texto.startswith("▲"):
+        return f"color: {VERMELHO_ALTA}; font-weight: 600"
+    return ""
 
 
 def tabela(produtos: pd.DataFrame) -> None:
@@ -129,8 +165,12 @@ def tabela(produtos: pd.DataFrame) -> None:
     visao = produtos.assign(variacao_txt=produtos["variacao_pct"].map(dados.formatar_pct))
     base_ord = visao.sort_values(chave, ascending=ascendente, na_position="last")
 
+    # Styler (e não só column_config): a cor é o único canal que o column_config
+    # do 1.65 não oferece, e a tabela tem 50+ linhas.
+    exibicao = base_ord[list(colunas)].style.map(_pintar_variacao, subset=["variacao_txt"])
+
     st.dataframe(
-        base_ord[list(colunas)],
+        exibicao,
         column_config=colunas,
         hide_index=True,
         width="stretch",
@@ -147,16 +187,7 @@ def tabela(produtos: pd.DataFrame) -> None:
         st.caption(f"{int(longe.sum())} produto(s) comparam com uma coleta de mais de um dia atrás "
                    f"(houve dia sem coleta).")
 
-    promocoes = produtos[produtos["em_promocao"]]
-    if not promocoes.empty:
-        st.subheader("Promoções ativas")
-        for _, linha in promocoes.iterrows():
-            desconto = 100 * (1 - linha["preco"] / linha["preco_original"])
-            st.markdown(
-                f"**{linha['nome']}** — de {dados.formatar_brl_md(linha['preco_original'])} "
-                f"por {dados.formatar_brl_md(linha['preco'])} ({desconto:.0f}% off) · "
-                f"{dados.formatar_peso(linha['peso_g'])} · {dados.formatar_brl_md(linha['preco_por_kg'])}/kg"
-            )
+    # As promoções saíram daqui: viraram card na visão geral (evita aparecer três vezes).
 
 
 def grafico(produtos: pd.DataFrame) -> None:
@@ -212,36 +243,105 @@ def grafico(produtos: pd.DataFrame) -> None:
     st.plotly_chart(figura, width="stretch")
 
 
-def destaques(produtos: pd.DataFrame) -> None:
-    com_variacao = produtos[produtos["variacao_pct"].notna()]
+def _card(titulo: str, linhas: list[str], vazio: str, limite: int = 5) -> None:
+    """Um bloco da visão geral: título, até `limite` linhas e aviso quando vazio.
+
+    O corte importa: num catálogo recém-migrado o card de novidades casaria com
+    os 51 produtos e empurraria o resto da página para fora da tela.
+    """
+    with st.container(border=True):
+        st.subheader(titulo)
+        if not linhas:
+            st.caption(vazio)
+            return
+        for linha in linhas[:limite]:
+            st.markdown(linha)
+        if len(linhas) > limite:
+            st.caption(f"+ {len(linhas) - limite} outro(s) — veja a aba **Tabela**.")
+
+
+def visao_geral(coletas: pd.DataFrame, resumo: dict, blocos: dict[str, pd.DataFrame]) -> None:
+    """Home do painel: os seis cards. A tabela tem aba própria e os KPIs ficam
+    na barra fixa do topo.
+
+    Os cards são globais (catálogo inteiro): a sidebar filtra a tabela e o
+    gráfico, mas a visão geral existe para responder "como está a categoria
+    hoje?" de uma vez.
+    """
     esquerda, direita = st.columns(2)
 
+    def variacoes(df: pd.DataFrame) -> list[str]:
+        return [
+            f"**{dados.formatar_pct(l['variacao_pct'])}** · {l['nome']} "
+            f"({dados.formatar_peso(l['peso_g'])}) — {dados.formatar_brl_md(l['preco_anterior'])} → "
+            f"{dados.formatar_brl_md(l['preco'])}"
+            for _, l in df.iterrows()
+        ]
+
+    def sobre_piso(df: pd.DataFrame) -> list[str]:
+        linhas = []
+        for _, l in df.iterrows():
+            desvio = l["pct_sobre_piso"]
+            # 0% significa "está no menor preço já registrado": dizer "0,00% acima" é estranho
+            situacao = ("no **piso histórico**" if pd.isna(desvio) or abs(desvio) < 0.005
+                        else f"**{dados.formatar_pct(desvio)}** acima do piso")
+            linhas.append(
+                f"{situacao} · {l['nome']} ({dados.formatar_peso(l['peso_g'])}) — "
+                f"{dados.formatar_brl_md(l['preco'])}"
+            )
+        return linhas
+
     with esquerda:
-        st.subheader("Maiores quedas desde a coleta anterior")
-        quedas = com_variacao[com_variacao["variacao_pct"] < 0].sort_values("variacao_pct").head(10)
-        if com_variacao.empty:
-            st.info("Nenhuma variação registrada ainda — é preciso pelo menos duas coletas por produto.")
-        elif quedas.empty:
-            st.info("Nenhum produto caiu de preço entre as duas últimas coletas.")
-        else:
-            for _, linha in quedas.iterrows():
-                st.markdown(
-                    f"**{dados.formatar_pct(linha['variacao_pct'])}** · {linha['nome']} "
-                    f"({dados.formatar_peso(linha['peso_g'])}) — {dados.formatar_brl_md(linha['preco_anterior'])} → "
-                    f"{dados.formatar_brl_md(linha['preco'])}"
-                )
+        _card("Maiores quedas", variacoes(blocos["quedas"]),
+              "Nenhuma queda entre as duas últimas coletas.")
+        _card("Maiores altas", variacoes(blocos["altas"]),
+              "Nenhuma alta entre as duas últimas coletas.")
+        _card("Mais perto do piso", sobre_piso(blocos["perto_piso"]),
+              "Sem histórico suficiente para calcular o piso.")
 
     with direita:
-        st.subheader("Menor preço por quilo")
-        for _, linha in produtos.dropna(subset=["preco_por_kg"]).sort_values("preco_por_kg").head(10).iterrows():
-            st.markdown(
-                f"**{dados.formatar_brl_md(linha['preco_por_kg'])}/kg** · {linha['nome']} "
-                f"({dados.formatar_peso(linha['peso_g'])}) — {dados.formatar_brl_md(linha['preco'])}"
-            )
+        _card(
+            f"Promoções ativas ({len(blocos['promocoes'])})",
+            [f"**{l['nome']}** — de {dados.formatar_brl_md(l['preco_original'])} por "
+             f"{dados.formatar_brl_md(l['preco'])} "
+             f"({100 * (1 - l['preco'] / l['preco_original']):.0f}% off) · "
+             f"{dados.formatar_brl_md(l['preco_por_kg'])}/kg"
+             for _, l in blocos["promocoes"].iterrows()],
+            "Nenhum produto com preço de lista acima do preço atual.",
+        )
+        _card(
+            "Novidades (últimos 3 dias)",
+            [f"**{l['nome']}** ({dados.formatar_peso(l['peso_g'])}) — "
+             f"{dados.formatar_brl_md(l['preco'])} · apareceu em {l['primeira_visao']:%d/%m/%Y}"
+             for _, l in blocos["novidades"].iterrows()],
+            "Nenhum produto novo na listagem nos últimos 3 dias.",
+        )
+        with st.container(border=True):
+            st.subheader("Última coleta")
+            if coletas.empty:
+                st.caption("Nenhuma coleta registrada ainda.")
+            elif resumo["ultimo_status"] == "ok":
+                st.markdown(f"Status **ok** · {resumo['dias_ok_7d']} dos últimos 7 dias coletados.")
+                st.caption("O painel relê o banco ao abrir, com cache de 1 h.")
+            else:
+                st.error(f"Status **{resumo['ultimo_status']}** — veja o histórico no GitHub Actions.")
 
-    parados = produtos[produtos["variacao_pct"].isna()]
-    if not parados.empty:
-        st.caption(f"{len(parados)} produtos ainda sem variação calculável (só uma coleta registrada).")
+
+def _metric_extremo(coluna, rotulo: str, extremo: tuple[str, float] | None, *, sinal: int,
+                    vazio: str, sem_variacao: str = "Precisa de pelo menos duas coletas") -> None:
+    """Métrica de extremo (maior queda / maior alta).
+
+    Antes, "sem queda" era exibido como "0,00%", que parece uma medição real. Se
+    não há valor no sinal pedido, mostramos "—" e explicamos no tooltip.
+    """
+    if extremo is None:
+        coluna.metric(rotulo, "—", help=sem_variacao)
+        return
+    nome, variacao = extremo
+    if (sinal < 0 and variacao < 0) or (sinal > 0 and variacao > 0):
+        coluna.metric(rotulo, dados.formatar_pct(variacao), help=nome)
+    else:
+        coluna.metric(rotulo, "—", help=vazio)
 
 
 def main() -> None:
@@ -265,32 +365,28 @@ def main() -> None:
     resumo = dados.resumo(produtos, coletas)
     barra_de_status(coletas, resumo)
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     c1.metric("Produtos ativos", resumo["ativos"])
     c2.metric("Em promoção", resumo["promocoes"])
     c3.metric("R$/kg mediano", dados.formatar_brl(resumo["preco_por_kg_mediano"]),
               help="Mediana do preço por quilo; a média seria distorcida pelos nanolotes")
-    if resumo["maior_queda"]:
-        nome, variacao = resumo["maior_queda"]
-        if variacao < 0:
-            c4.metric("Maior queda", dados.formatar_pct(variacao), help=nome)
-        else:
-            c4.metric("Maior queda", "0,00%",
-                      help="Nenhum preço caiu entre as duas últimas coletas")
-    else:
-        c4.metric("Maior queda", "—", help="Precisa de pelo menos duas coletas")
-    c5.metric("Fora da listagem", resumo["inativos"], help="Produtos que já não aparecem na categoria")
+    _metric_extremo(c4, "Maior queda", resumo["maior_queda"], sinal=-1,
+                    vazio="Nenhum preço caiu entre as duas últimas coletas")
+    _metric_extremo(c5, "Maior alta", resumo["maior_alta"], sinal=+1,
+                    vazio="Nenhum preço subiu entre as duas últimas coletas")
+    c6.metric("Fora da listagem", resumo["inativos"], help="Produtos que já não aparecem na categoria")
 
     filtrado = sidebar(produtos)
-    tabela_aba, evolucao_aba, destaques_aba = st.tabs(
-        ["Produtos", "Evolução de preço", "Destaques"]
+    blocos = dados.cards(produtos)
+    visao_aba, tabela_aba, evolucao_aba = st.tabs(
+        ["Visão geral", "Tabela", "Evolução de preço"]
     )
+    with visao_aba:
+        visao_geral(coletas, resumo, blocos)
     with tabela_aba:
         tabela(filtrado)
     with evolucao_aba:
         grafico(filtrado)
-    with destaques_aba:
-        destaques(filtrado)
 
 
 main()

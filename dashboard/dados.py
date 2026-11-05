@@ -18,6 +18,7 @@ só depois filtrada para o snapshot mais recente. Se o filtro viesse antes do
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -39,7 +40,10 @@ WITH historico AS (
            LAG(data_coleta) OVER (PARTITION BY produto_id ORDER BY data_coleta) AS data_anterior,
            -- piso histórico: MIN() na CTE, ANTES do filtro posicao = 1.
            -- Depois do filtro cada produto teria uma linha só e o piso seria o preço de hoje.
-           MIN(preco) OVER (PARTITION BY produto_id) AS preco_piso
+           MIN(preco) OVER (PARTITION BY produto_id) AS preco_piso,
+           -- primeira aparição do produto: é o que define "novidade" no painel.
+           -- `criado_em` não serve: numa migração todos nascem no mesmo dia.
+           MIN(data_coleta) OVER (PARTITION BY produto_id) AS primeira_visao
     FROM precos
 )
 SELECT p.id            AS produto_id,
@@ -48,13 +52,15 @@ SELECT p.id            AS produto_id,
        p.peso_g        AS peso_g,
        p.ativo         AS ativo,
        p.ultima_visao  AS ultima_visao,
+       p.criado_em     AS criado_em,
        h.preco            AS preco,
        h.preco_original   AS preco_original,
        h.em_promocao      AS em_promocao,
        h.data_coleta      AS data_coleta,
        h.preco_anterior   AS preco_anterior,
        h.data_anterior    AS data_anterior,
-       h.preco_piso       AS preco_piso
+       h.preco_piso       AS preco_piso,
+       h.primeira_visao   AS primeira_visao
 FROM historico h
 JOIN produtos p ON p.id = h.produto_id
 WHERE h.posicao = 1
@@ -120,10 +126,20 @@ def formatar_brl_md(valor: float | None) -> str:
 
 
 def formatar_pct(valor: float | None) -> str:
-    """Variação percentual com vírgula decimal e sinal: -20.0 -> '-20,00%'."""
+    """Variação percentual com seta e vírgula decimal: -20.0 -> '▼ -20,00%'.
+
+    A seta dá o sinal visual que o `st.column_config` do Streamlit 1.65 não tem
+    (`format="delta"` não existe): numa tabela de 50+ linhas, "+3%" e "-3%" em
+    texto puro se confundem.
+    """
     if valor is None or pd.isna(valor):
         return "—"
-    return f"{valor:+.2f}".replace(".", ",") + "%"
+    numero = f"{abs(valor):.2f}".replace(".", ",")
+    if valor > 0:
+        return f"▲ +{numero}%"
+    if valor < 0:
+        return f"▼ -{numero}%"
+    return f"{numero}%"
 
 
 def formatar_peso(peso_g: float | None) -> str:
@@ -221,10 +237,15 @@ def carregar_produtos(engine: Engine | None = None) -> pd.DataFrame:
     df.loc[com_piso, "pct_sobre_piso"] = (
         (df.loc[com_piso, "preco"] / df.loc[com_piso, "preco_piso"] - 1) * 100
     ).round(2)
+    # `pd.NA` deixa a coluna como object; sem o cast, `nsmallest`/ordenação numérica falham
+    df["variacao_pct"] = pd.to_numeric(df["variacao_pct"], errors="coerce")
+    df["pct_sobre_piso"] = pd.to_numeric(df["pct_sobre_piso"], errors="coerce")
     df["em_promocao"] = df["em_promocao"].astype(bool)
     df["ativo"] = df["ativo"].astype(bool)
     df["atualizado_em"] = _localizar(df["data_coleta"])
     df["visto_em"] = _localizar(df["ultima_visao"])
+    df["criado_em"] = _localizar(df["criado_em"])
+    df["primeira_visao"] = _localizar(df["primeira_visao"])
     return df
 
 
@@ -280,12 +301,69 @@ def carregar_coletas(limite: int = 20, engine: Engine | None = None) -> pd.DataF
     return df
 
 
+def dias_com_coleta_ok(coletas: pd.DataFrame, janela: int = 7) -> int:
+    """Quantos dos últimos `janela` dias tiveram coleta com status `ok`.
+
+    A coluna existe para o card de confiabilidade: uma coleta que falhou um dia
+    não aparece em nenhum outro lugar do painel.
+    """
+    if coletas.empty or "status" not in coletas:
+        return 0
+    ok = coletas[coletas["status"] == "ok"]
+    if ok.empty:
+        return 0
+    referencia = coletas["iniciada_local"].max().date()
+    corte = referencia - timedelta(days=janela - 1)
+    return int(ok[ok["iniciada_local"].dt.date >= corte]["iniciada_local"].dt.date.nunique())
+
+
+def cards(produtos: pd.DataFrame, *, top: int = 5, dias_novos: int = 3) -> dict[str, pd.DataFrame]:
+    """Blocos da visão geral: cada chave é um DataFrame pronto para virar card.
+
+    Vive aqui (e não no `app.py`) para ser testável — a mesma razão de `filtrar`.
+
+    "Novidades" = produto cuja **primeira aparição** (`MIN(preco.data_coleta)`,
+    exposta como `primeira_visao`) caiu nos últimos `dias_novos` dias, contados a
+    partir da coleta mais recente. Não usamos `criado_em` porque numa migração
+    todos os produtos nascem no mesmo dia e o card listaria o catálogo inteiro.
+    """
+    if produtos.empty:
+        vazio = produtos
+        return {chave: vazio for chave in ("quedas", "altas", "perto_piso", "promocoes", "novidades")}
+
+    ativos = produtos[produtos["ativo"]]
+    com_variacao = ativos[ativos["variacao_pct"].notna()]
+
+    novidades = ativos.iloc[0:0]
+    if "primeira_visao" in ativos and ativos["primeira_visao"].notna().any():
+        # referência de "hoje" = coleta mais recente (já em Brasília); o
+        # data_coleta cru vem do banco como texto, por isso não serve direto
+        referencia = (
+            ativos["atualizado_em"].max() if "atualizado_em" in ativos
+            else pd.to_datetime(ativos["data_coleta"], utc=True).max()
+        )
+        corte = referencia - pd.Timedelta(days=dias_novos)
+        novidades = ativos[ativos["primeira_visao"] >= corte].sort_values(
+            "primeira_visao", ascending=False
+        )
+
+    return {
+        "quedas": com_variacao[com_variacao["variacao_pct"] < 0].nsmallest(top, "variacao_pct"),
+        "altas": com_variacao[com_variacao["variacao_pct"] > 0].nlargest(top, "variacao_pct"),
+        # 0% = no menor preço já registrado do produto
+        "perto_piso": ativos[ativos["pct_sobre_piso"].notna()].nsmallest(top, "pct_sobre_piso"),
+        "promocoes": ativos[ativos["em_promocao"]].sort_values("preco_por_kg"),
+        "novidades": novidades,
+    }
+
+
 def resumo(df: pd.DataFrame, coletas: pd.DataFrame) -> dict:
     """Números do topo do painel."""
     ativos = df[df["ativo"]] if not df.empty else df
     com_preco = ativos if ativos.empty else ativos[ativos["preco"].notna()]
     quedas = com_preco[com_preco["variacao_pct"].notna()] if not com_preco.empty else com_preco
     maior_queda = quedas.sort_values("variacao_pct").head(1) if not quedas.empty else quedas
+    maior_alta = quedas.sort_values("variacao_pct", ascending=False).head(1) if not quedas.empty else quedas
     return {
         "produtos": len(df),
         "ativos": len(ativos),
@@ -293,11 +371,18 @@ def resumo(df: pd.DataFrame, coletas: pd.DataFrame) -> dict:
         "promocoes": int(com_preco["em_promocao"].sum()) if not com_preco.empty else 0,
         # mediana, e não média: o R$/kg dos nanolotes distorce a média para cima
         "preco_por_kg_mediano": com_preco["preco_por_kg"].median() if not com_preco.empty else None,
+        "dias_ok_7d": dias_com_coleta_ok(coletas),
         "ultima_coleta": coletas["iniciada_local"].iloc[0] if not coletas.empty else None,
         "ultimo_status": coletas["status"].iloc[0] if not coletas.empty else None,
         "maior_queda": (
             (maior_queda["nome"].iloc[0], maior_queda["variacao_pct"].iloc[0])
             if not maior_queda.empty
+            else None
+        ),
+        # o extremo oposto: sem ele o painel só sabe falar de queda de preço
+        "maior_alta": (
+            (maior_alta["nome"].iloc[0], maior_alta["variacao_pct"].iloc[0])
+            if not maior_alta.empty
             else None
         ),
         "sem_variacao": int(com_preco["variacao_pct"].isna().sum()) if not com_preco.empty else 0,

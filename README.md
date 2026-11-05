@@ -10,13 +10,15 @@ Especificação, modelo de dados e limites de requisição: [`AGENTS.md`](AGENTS
 
 ## Dashboard
 
-![Aba de produtos: filtros, métricas, tabela com variação, piso e R$/kg](docs/img/dashboard-produtos.png)
+![Visão geral: KPIs no topo e cards de quedas, altas, piso, promoções, novidades e coleta](docs/img/dashboard-visao-geral.png)
+
+![Aba de tabela: filtros na sidebar, variação com seta, acima do piso e R$/kg](docs/img/dashboard-tabela.png)
 
 ![Aba de evolução: preço do pacote ao longo de 21 dias, com granularidade dia/semana/mês](docs/img/dashboard-evolucao.png)
 
-- **Filtros** (sidebar): marca, peso, faixa de preço, faixa de R$/kg, "somente promoções" e busca por nome.
-- **Tabela**: preço atual, preço anterior, variação percentual, **"acima do piso"** (quanto o preço está acima do menor preço já registrado do produto) e **R$/kg**, para comparar embalagens de 250 g com 1 kg.
-- **Evolução e destaques**: série por produto em dia/semana/mês, maiores quedas e menor preço por quilo.
+- **Visão geral** (home): KPIs do catálogo e seis cards — maiores quedas, maiores altas, **mais perto do piso histórico**, promoções ativas, novidades e situação da última coleta.
+- **Tabela**: filtros por marca, peso, preço, R$/kg, promoção e busca por nome; colunas de preço atual, preço anterior, variação (▲/▼ com cor), **"acima do piso"** e **R$/kg** — este último para comparar embalagens de 250 g com 1 kg sem se enganar.
+- **Evolução de preço**: série de um produto por vez, com granularidade dia/semana/mês.
 - **Somente leitura**: o painel nunca escreve no banco; o cache de consulta é de 1 h, e o botão **↻ Atualizar** relê na hora.
 
 > Capturas geradas offline a partir das páginas reais salvas em `tests/fixtures/`; a série anterior ao
