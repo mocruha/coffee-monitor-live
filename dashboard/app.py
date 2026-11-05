@@ -24,7 +24,73 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dashboard import dados  # noqa: E402
 from scrapers import base  # noqa: E402
 
+CSS_CARDS = """
+<style>
+/* Cards da visão geral: elevação leve em três camadas de sombra + realce no hover.
+   Nada de cor de fundo fixa: o tema claro/escuro do Streamlit continua valendo. */
+div[data-testid="stLayoutWrapper"]:has(> div[data-testid="stVerticalBlock"]) {
+    display: flex;
+    flex-direction: column;
+}
+
+div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"] {
+    flex: 1 1 auto;
+    padding: 1.15rem 1.3rem;
+    border: 1px solid rgba(15, 23, 42, 0.10);
+    border-radius: 14px;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.55),
+        0 1px 1px rgba(15, 23, 42, 0.04),
+        0 2px 6px rgba(15, 23, 42, 0.06),
+        0 10px 20px -8px rgba(15, 23, 42, 0.12);
+    transition: box-shadow 180ms ease, transform 180ms ease;
+}
+
+div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]:hover {
+    transform: translateY(-2px);
+    box-shadow:
+        0 2px 4px rgba(15, 23, 42, 0.06),
+        0 8px 16px rgba(15, 23, 42, 0.10),
+        0 18px 32px -12px rgba(15, 23, 42, 0.18);
+}
+
+/* Colunas que contêm cards: mesma altura, e o último card estica até o fim
+   para as duas colunas terminarem na mesma linha. */
+div[data-testid="stHorizontalBlock"]:has(div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]) {
+    align-items: stretch;
+}
+
+div[data-testid="stHorizontalBlock"]:has(div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]) > div[data-testid="stColumn"] {
+    display: flex;
+    flex-direction: column;
+}
+
+div[data-testid="stHorizontalBlock"]:has(div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]) > div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+}
+
+div[data-testid="stHorizontalBlock"]:has(div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]) > div[data-testid="stColumn"] > div[data-testid="stVerticalBlock"] > div[data-testid="stLayoutWrapper"] {
+    flex: 1 1 auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"] {
+        transition: none;
+    }
+    div[data-testid="stLayoutWrapper"] > div[data-testid="stVerticalBlock"]:hover {
+        transform: none;
+    }
+}
+</style>
+"""
+
+
 st.set_page_config(page_title="Cafés em grãos — Casa Santa Luzia", page_icon="☕", layout="wide")
+
+# Depois do set_page_config: ele precisa ser o primeiro comando do Streamlit.
+st.markdown(CSS_CARDS, unsafe_allow_html=True)
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -243,6 +309,9 @@ def grafico(produtos: pd.DataFrame) -> None:
     st.plotly_chart(figura, width="stretch")
 
 
+
+
+
 def _card(titulo: str, linhas: list[str], vazio: str, limite: int = 5) -> None:
     """Um bloco da visão geral: título, até `limite` linhas e aviso quando vazio.
 
@@ -268,8 +337,6 @@ def visao_geral(coletas: pd.DataFrame, resumo: dict, blocos: dict[str, pd.DataFr
     gráfico, mas a visão geral existe para responder "como está a categoria
     hoje?" de uma vez.
     """
-    esquerda, direita = st.columns(2)
-
     def variacoes(df: pd.DataFrame) -> list[str]:
         return [
             f"**{dados.formatar_pct(l['variacao_pct'])}** · {l['nome']} "
@@ -291,15 +358,21 @@ def visao_geral(coletas: pd.DataFrame, resumo: dict, blocos: dict[str, pd.DataFr
             )
         return linhas
 
-    with esquerda:
+    # Três linhas de dois cards: assim cada par termina na mesma altura e as duas
+    # colunas fecham juntas — sem concentrar todo o espaço sobrando num card só.
+    linha1 = st.columns(2)
+    with linha1[0]:
         _card("Maiores quedas", variacoes(blocos["quedas"]),
               "Nenhuma queda entre as duas últimas coletas.")
+    with linha1[1]:
         _card("Maiores altas", variacoes(blocos["altas"]),
               "Nenhuma alta entre as duas últimas coletas.")
+
+    linha2 = st.columns(2)
+    with linha2[0]:
         _card("Mais perto do piso", sobre_piso(blocos["perto_piso"]),
               "Sem histórico suficiente para calcular o piso.")
-
-    with direita:
+    with linha2[1]:
         _card(
             f"Promoções ativas ({len(blocos['promocoes'])})",
             [f"**{l['nome']}** — de {dados.formatar_brl_md(l['preco_original'])} por "
@@ -309,6 +382,9 @@ def visao_geral(coletas: pd.DataFrame, resumo: dict, blocos: dict[str, pd.DataFr
              for _, l in blocos["promocoes"].iterrows()],
             "Nenhum produto com preço de lista acima do preço atual.",
         )
+
+    linha3 = st.columns(2)
+    with linha3[0]:
         _card(
             "Novidades (últimos 3 dias)",
             [f"**{l['nome']}** ({dados.formatar_peso(l['peso_g'])}) — "
@@ -316,6 +392,7 @@ def visao_geral(coletas: pd.DataFrame, resumo: dict, blocos: dict[str, pd.DataFr
              for _, l in blocos["novidades"].iterrows()],
             "Nenhum produto novo na listagem nos últimos 3 dias.",
         )
+    with linha3[1]:
         with st.container(border=True):
             st.subheader("Última coleta")
             if coletas.empty:
