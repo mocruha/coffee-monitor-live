@@ -310,11 +310,11 @@ def visao_geral(coletas: pd.DataFrame, resumo: dict, blocos: dict[str, pd.DataFr
             "Nenhum produto com preço de lista acima do preço atual.",
         )
         _card(
-            "Novidades",
+            "Novidades (últimos 3 dias)",
             [f"**{l['nome']}** ({dados.formatar_peso(l['peso_g'])}) — "
-             f"{dados.formatar_brl_md(l['preco'])} · entrou em {l['criado_em']:%d/%m/%Y}"
+             f"{dados.formatar_brl_md(l['preco'])} · apareceu em {l['primeira_visao']:%d/%m/%Y}"
              for _, l in blocos["novidades"].iterrows()],
-            "Nenhum produto novo na listagem nos últimos dias.",
+            "Nenhum produto novo na listagem nos últimos 3 dias.",
         )
         with st.container(border=True):
             st.subheader("Última coleta")

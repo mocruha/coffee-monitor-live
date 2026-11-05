@@ -363,25 +363,54 @@ def test_cards_promocoes_so_com_preco_de_lista(banco):
     assert (promocoes["preco_original"] > promocoes["preco"]).all()
 
 
-def test_cards_novidades_respeita_a_janela(banco):
-    """Catálogo antigo não gera novidade; produto criado agora, sim.
+def test_cards_novidades_usa_a_primeira_aparicao(engine, cards):
+    """Novidade = produto cuja **primeira aparição** caiu nos últimos 3 dias.
 
-    Observação: num catálogo recém-migrado todos os produtos têm `criado_em` da
-    mesma semana, então todos aparecem como novidade pelos primeiros 7 dias —
-    é literalmente verdade, só ruidoso nesse arranque.
+    Regressão do caso de migração: todos os produtos entram no banco no mesmo
+    dia, então `criado_em` é recente para o catálogo inteiro. Se o card usasse
+    `criado_em`, os 51 apareceriam como "novos" (era o comportamento anterior).
     """
-    df = dados.carregar_produtos(banco)
-    agora = df["atualizado_em"].max()
+    urls = list(cards)
+    antiga = datetime(2026, 10, 25, 20, 0, tzinfo=timezone.utc)
+    hoje = datetime(2026, 11, 5, 20, 0, tzinfo=timezone.utc)
+    veteranos = {u: cards[u] for u in urls[:50]}
+    novo = {urls[50]: cards[urls[50]]}
+    nome_novo = cards[urls[50]]["nome"]
 
-    antigos = df.copy()
-    antigos["criado_em"] = agora - pd.Timedelta(days=30)
-    assert dados.cards(antigos)["novidades"].empty
+    with Session(engine) as sessao:
+        persistencia.persistir(sessao, veteranos, antiga)
+        sessao.commit()
+        persistencia.persistir(sessao, {**veteranos, **novo}, hoje)
+        sessao.commit()
+        persistencia.registrar_coleta(sessao, iniciada_em=hoje, status="ok")
 
-    recentes = antigos.copy()
-    recentes.loc[recentes.index[:2], "criado_em"] = agora
-    novidades = dados.cards(recentes)["novidades"]
-    assert len(novidades) == 2
-    assert novidades["criado_em"].is_monotonic_decreasing
+    df = dados.carregar_produtos(engine)
+    novidades = dados.cards(df)["novidades"]
+
+    assert len(novidades) == 1, "só o produto que apareceu agora é novidade"
+    assert novidades["nome"].iloc[0] == nome_novo
+    assert novidades["primeira_visao"].iloc[0].date() == hoje.date()
+
+    veteranos_df = df[df["nome"] != nome_novo]
+    assert not novidades["produto_id"].isin(veteranos_df["produto_id"]).any()
+    # o catálogo antigo tem `criado_em` recente e mesmo assim fica fora
+    assert (df["criado_em"] >= df["atualizado_em"].max() - pd.Timedelta(days=3)).all()
+
+
+def test_cards_novidades_janela_de_tres_dias(engine, cards):
+    """Produto que já aparecia há 4 dias não é novidade — mas ainda é, com janela de 7."""
+    inicio = datetime(2026, 11, 1, 20, 0, tzinfo=timezone.utc)
+    hoje = datetime(2026, 11, 5, 20, 0, tzinfo=timezone.utc)
+
+    with Session(engine) as sessao:
+        persistencia.persistir(sessao, cards, inicio)   # catálogo já existia em 01/11
+        sessao.commit()
+        persistencia.persistir(sessao, cards, hoje)
+        sessao.commit()
+
+    df = dados.carregar_produtos(engine)
+    assert dados.cards(df)["novidades"].empty, "primeira aparição há 4 dias sai da janela de 3"
+    assert len(dados.cards(df, dias_novos=7)["novidades"]) == len(df)
 
 
 def test_dias_com_coleta_ok_conta_dias_distintos(banco):

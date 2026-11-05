@@ -40,7 +40,10 @@ WITH historico AS (
            LAG(data_coleta) OVER (PARTITION BY produto_id ORDER BY data_coleta) AS data_anterior,
            -- piso histórico: MIN() na CTE, ANTES do filtro posicao = 1.
            -- Depois do filtro cada produto teria uma linha só e o piso seria o preço de hoje.
-           MIN(preco) OVER (PARTITION BY produto_id) AS preco_piso
+           MIN(preco) OVER (PARTITION BY produto_id) AS preco_piso,
+           -- primeira aparição do produto: é o que define "novidade" no painel.
+           -- `criado_em` não serve: numa migração todos nascem no mesmo dia.
+           MIN(data_coleta) OVER (PARTITION BY produto_id) AS primeira_visao
     FROM precos
 )
 SELECT p.id            AS produto_id,
@@ -56,7 +59,8 @@ SELECT p.id            AS produto_id,
        h.data_coleta      AS data_coleta,
        h.preco_anterior   AS preco_anterior,
        h.data_anterior    AS data_anterior,
-       h.preco_piso       AS preco_piso
+       h.preco_piso       AS preco_piso,
+       h.primeira_visao   AS primeira_visao
 FROM historico h
 JOIN produtos p ON p.id = h.produto_id
 WHERE h.posicao = 1
@@ -241,6 +245,7 @@ def carregar_produtos(engine: Engine | None = None) -> pd.DataFrame:
     df["atualizado_em"] = _localizar(df["data_coleta"])
     df["visto_em"] = _localizar(df["ultima_visao"])
     df["criado_em"] = _localizar(df["criado_em"])
+    df["primeira_visao"] = _localizar(df["primeira_visao"])
     return df
 
 
@@ -312,12 +317,15 @@ def dias_com_coleta_ok(coletas: pd.DataFrame, janela: int = 7) -> int:
     return int(ok[ok["iniciada_local"].dt.date >= corte]["iniciada_local"].dt.date.nunique())
 
 
-def cards(produtos: pd.DataFrame, *, top: int = 5, dias_novos: int = 7) -> dict[str, pd.DataFrame]:
+def cards(produtos: pd.DataFrame, *, top: int = 5, dias_novos: int = 3) -> dict[str, pd.DataFrame]:
     """Blocos da visão geral: cada chave é um DataFrame pronto para virar card.
 
     Vive aqui (e não no `app.py`) para ser testável — a mesma razão de `filtrar`.
-    "Novidades" usa a data da coleta mais recente como referência de "hoje": o
-    relógio do servidor não serve, porque a série pode estar parada há dias.
+
+    "Novidades" = produto cuja **primeira aparição** (`MIN(preco.data_coleta)`,
+    exposta como `primeira_visao`) caiu nos últimos `dias_novos` dias, contados a
+    partir da coleta mais recente. Não usamos `criado_em` porque numa migração
+    todos os produtos nascem no mesmo dia e o card listaria o catálogo inteiro.
     """
     if produtos.empty:
         vazio = produtos
@@ -327,7 +335,7 @@ def cards(produtos: pd.DataFrame, *, top: int = 5, dias_novos: int = 7) -> dict[
     com_variacao = ativos[ativos["variacao_pct"].notna()]
 
     novidades = ativos.iloc[0:0]
-    if "criado_em" in ativos and ativos["criado_em"].notna().any():
+    if "primeira_visao" in ativos and ativos["primeira_visao"].notna().any():
         # referência de "hoje" = coleta mais recente (já em Brasília); o
         # data_coleta cru vem do banco como texto, por isso não serve direto
         referencia = (
@@ -335,7 +343,9 @@ def cards(produtos: pd.DataFrame, *, top: int = 5, dias_novos: int = 7) -> dict[
             else pd.to_datetime(ativos["data_coleta"], utc=True).max()
         )
         corte = referencia - pd.Timedelta(days=dias_novos)
-        novidades = ativos[ativos["criado_em"] >= corte].sort_values("criado_em", ascending=False)
+        novidades = ativos[ativos["primeira_visao"] >= corte].sort_values(
+            "primeira_visao", ascending=False
+        )
 
     return {
         "quedas": com_variacao[com_variacao["variacao_pct"] < 0].nsmallest(top, "variacao_pct"),
