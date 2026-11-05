@@ -331,6 +331,74 @@ def test_piso_nao_sobe_quando_o_preco_sobe(engine, cards):
     assert linha["pct_sobre_piso"] == pytest.approx(100 * 20 / preco_inicial, abs=0.01)
 
 
+# --- Visão geral: os cards da home ---
+
+def test_cards_separa_quedas_e_altas(banco):
+    df = dados.carregar_produtos(banco)
+    blocos = dados.cards(df)
+
+    assert len(blocos["quedas"]) == 1 and len(blocos["altas"]) == 1
+    assert blocos["quedas"]["variacao_pct"].iloc[0] < 0
+    assert blocos["altas"]["variacao_pct"].iloc[0] > 0
+    # ninguém aparece nos dois cards
+    assert set(blocos["quedas"]["produto_id"]) & set(blocos["altas"]["produto_id"]) == set()
+
+
+def test_cards_perto_do_piso_ordena_pelo_menor_desvio(banco):
+    df = dados.carregar_produtos(banco)
+    perto = dados.cards(df)["perto_piso"]
+
+    assert len(perto) == 5  # top=5 por padrão
+    assert perto["pct_sobre_piso"].is_monotonic_increasing
+    # o produto que caiu está no piso (0%)
+    assert perto["pct_sobre_piso"].iloc[0] == pytest.approx(0.0)
+
+
+def test_cards_promocoes_so_com_preco_de_lista(banco):
+    df = dados.carregar_produtos(banco)
+    promocoes = dados.cards(df)["promocoes"]
+
+    assert len(promocoes) == 2  # as duas promoções reais dos fixtures
+    assert (promocoes["em_promocao"]).all()
+    assert (promocoes["preco_original"] > promocoes["preco"]).all()
+
+
+def test_cards_novidades_respeita_a_janela(banco):
+    """Catálogo antigo não gera novidade; produto criado agora, sim.
+
+    Observação: num catálogo recém-migrado todos os produtos têm `criado_em` da
+    mesma semana, então todos aparecem como novidade pelos primeiros 7 dias —
+    é literalmente verdade, só ruidoso nesse arranque.
+    """
+    df = dados.carregar_produtos(banco)
+    agora = df["atualizado_em"].max()
+
+    antigos = df.copy()
+    antigos["criado_em"] = agora - pd.Timedelta(days=30)
+    assert dados.cards(antigos)["novidades"].empty
+
+    recentes = antigos.copy()
+    recentes.loc[recentes.index[:2], "criado_em"] = agora
+    novidades = dados.cards(recentes)["novidades"]
+    assert len(novidades) == 2
+    assert novidades["criado_em"].is_monotonic_decreasing
+
+
+def test_dias_com_coleta_ok_conta_dias_distintos(banco):
+    coletas = dados.carregar_coletas(engine=banco)
+    assert dados.dias_com_coleta_ok(coletas) == 1  # só uma coleta registrada no fixture
+    assert dados.dias_com_coleta_ok(coletas, janela=1) == 1
+    assert dados.dias_com_coleta_ok(coletas.iloc[0:0]) == 0
+
+
+def test_cards_com_dataframe_vazio_nao_quebra():
+    vazio = pd.DataFrame(columns=["produto_id", "nome", "ativo", "variacao_pct",
+                                  "pct_sobre_piso", "em_promocao", "data_coleta", "criado_em"])
+    blocos = dados.cards(vazio)
+    assert all(isinstance(df, pd.DataFrame) for df in blocos.values())
+    assert all(df.empty for df in blocos.values())
+
+
 def test_busca_e_texto_literal_nao_regex(banco):
     """N-1: sem `regex=False`, digitar '(' ou '+' no campo de busca derrubava a página."""
     df = dados.carregar_produtos(banco)

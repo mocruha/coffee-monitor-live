@@ -18,6 +18,7 @@ só depois filtrada para o snapshot mais recente. Se o filtro viesse antes do
 from __future__ import annotations
 
 import os
+from datetime import timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -48,6 +49,7 @@ SELECT p.id            AS produto_id,
        p.peso_g        AS peso_g,
        p.ativo         AS ativo,
        p.ultima_visao  AS ultima_visao,
+       p.criado_em     AS criado_em,
        h.preco            AS preco,
        h.preco_original   AS preco_original,
        h.em_promocao      AS em_promocao,
@@ -231,10 +233,14 @@ def carregar_produtos(engine: Engine | None = None) -> pd.DataFrame:
     df.loc[com_piso, "pct_sobre_piso"] = (
         (df.loc[com_piso, "preco"] / df.loc[com_piso, "preco_piso"] - 1) * 100
     ).round(2)
+    # `pd.NA` deixa a coluna como object; sem o cast, `nsmallest`/ordenação numérica falham
+    df["variacao_pct"] = pd.to_numeric(df["variacao_pct"], errors="coerce")
+    df["pct_sobre_piso"] = pd.to_numeric(df["pct_sobre_piso"], errors="coerce")
     df["em_promocao"] = df["em_promocao"].astype(bool)
     df["ativo"] = df["ativo"].astype(bool)
     df["atualizado_em"] = _localizar(df["data_coleta"])
     df["visto_em"] = _localizar(df["ultima_visao"])
+    df["criado_em"] = _localizar(df["criado_em"])
     return df
 
 
@@ -290,6 +296,57 @@ def carregar_coletas(limite: int = 20, engine: Engine | None = None) -> pd.DataF
     return df
 
 
+def dias_com_coleta_ok(coletas: pd.DataFrame, janela: int = 7) -> int:
+    """Quantos dos últimos `janela` dias tiveram coleta com status `ok`.
+
+    A coluna existe para o card de confiabilidade: uma coleta que falhou um dia
+    não aparece em nenhum outro lugar do painel.
+    """
+    if coletas.empty or "status" not in coletas:
+        return 0
+    ok = coletas[coletas["status"] == "ok"]
+    if ok.empty:
+        return 0
+    referencia = coletas["iniciada_local"].max().date()
+    corte = referencia - timedelta(days=janela - 1)
+    return int(ok[ok["iniciada_local"].dt.date >= corte]["iniciada_local"].dt.date.nunique())
+
+
+def cards(produtos: pd.DataFrame, *, top: int = 5, dias_novos: int = 7) -> dict[str, pd.DataFrame]:
+    """Blocos da visão geral: cada chave é um DataFrame pronto para virar card.
+
+    Vive aqui (e não no `app.py`) para ser testável — a mesma razão de `filtrar`.
+    "Novidades" usa a data da coleta mais recente como referência de "hoje": o
+    relógio do servidor não serve, porque a série pode estar parada há dias.
+    """
+    if produtos.empty:
+        vazio = produtos
+        return {chave: vazio for chave in ("quedas", "altas", "perto_piso", "promocoes", "novidades")}
+
+    ativos = produtos[produtos["ativo"]]
+    com_variacao = ativos[ativos["variacao_pct"].notna()]
+
+    novidades = ativos.iloc[0:0]
+    if "criado_em" in ativos and ativos["criado_em"].notna().any():
+        # referência de "hoje" = coleta mais recente (já em Brasília); o
+        # data_coleta cru vem do banco como texto, por isso não serve direto
+        referencia = (
+            ativos["atualizado_em"].max() if "atualizado_em" in ativos
+            else pd.to_datetime(ativos["data_coleta"], utc=True).max()
+        )
+        corte = referencia - pd.Timedelta(days=dias_novos)
+        novidades = ativos[ativos["criado_em"] >= corte].sort_values("criado_em", ascending=False)
+
+    return {
+        "quedas": com_variacao[com_variacao["variacao_pct"] < 0].nsmallest(top, "variacao_pct"),
+        "altas": com_variacao[com_variacao["variacao_pct"] > 0].nlargest(top, "variacao_pct"),
+        # 0% = no menor preço já registrado do produto
+        "perto_piso": ativos[ativos["pct_sobre_piso"].notna()].nsmallest(top, "pct_sobre_piso"),
+        "promocoes": ativos[ativos["em_promocao"]].sort_values("preco_por_kg"),
+        "novidades": novidades,
+    }
+
+
 def resumo(df: pd.DataFrame, coletas: pd.DataFrame) -> dict:
     """Números do topo do painel."""
     ativos = df[df["ativo"]] if not df.empty else df
@@ -304,6 +361,7 @@ def resumo(df: pd.DataFrame, coletas: pd.DataFrame) -> dict:
         "promocoes": int(com_preco["em_promocao"].sum()) if not com_preco.empty else 0,
         # mediana, e não média: o R$/kg dos nanolotes distorce a média para cima
         "preco_por_kg_mediano": com_preco["preco_por_kg"].median() if not com_preco.empty else None,
+        "dias_ok_7d": dias_com_coleta_ok(coletas),
         "ultima_coleta": coletas["iniciada_local"].iloc[0] if not coletas.empty else None,
         "ultimo_status": coletas["status"].iloc[0] if not coletas.empty else None,
         "maior_queda": (

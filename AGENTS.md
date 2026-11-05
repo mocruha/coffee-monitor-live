@@ -94,8 +94,8 @@ Três serviços, acoplados **apenas pelo banco**:
 │    promoção, marca                   │
 │  - Tabela com preço atual e variação │
 │  - Evolução de preço por produto     │
-│  - Destaques e promoções ativas      │
-│ Somente leitura. Acesso por e-mail.  │
+│  - Visão geral em cards              │
+│ Somente leitura. Sem login.          │
 └──────────────────────────────────────┘
 ```
 
@@ -384,10 +384,12 @@ on:
 - **Somente leitura:** o painel nunca escreve — a garantia é de política, e há um
   teste que varre `dashboard/dados.py` por comandos de escrita
   (`test_dashboard_nao_escreve`).
+- **Layout em três abas:** **Visão geral** (home: os seis cards), **Tabela** e **Evolução de preço**. Os KPIs (ativos, promoções, R$/kg mediano, maior queda, maior alta, fora da listagem) ficam na barra fixa, visíveis em todas as abas. Os cards e os KPIs olham o **catálogo inteiro**; a sidebar filtra apenas Tabela e Evolução — a home responde "como está a categoria hoje?", não "como está o meu recorte".
 - Filtros na sidebar: peso, marca, faixa de preço, faixa de R$/kg, "somente promoção" e busca por nome (texto literal, sem regex). A lógica vive em `dados.filtrar` para ser testável. Produto **sem peso** continua visível (R$/kg em branco) — valor desconhecido nunca é tratado como "fora da faixa", e `dados.formatar_peso` é o único formatador de peso (evita `nang`).
-- Tabela principal (apenas produtos na listagem; os inativos ficam no banco, com histórico): nome, marca, peso, preço atual, **preço por kg** (`preco / peso_g * 1000`), variação % contra a coleta anterior (↑/↓), **"Acima do piso"** (quanto o preço está acima do menor preço já registrado do produto) e badge de promoção. Ordenação por um dropdown (Variação, Preço, R$/kg, Peso, Nome) + seletor ascendente/descendente.
+- **Visão geral (home):** seis cards — maiores quedas, maiores altas, mais perto do piso (produtos a 0% do menor preço já registrado), promoções ativas, novidades (`produtos.criado_em` dentro de 7 dias da última coleta) e situação da última coleta. Cada card corta em 5 linhas e aponta para a aba Tabela. A lógica vive em `dados.cards`, testável sem Streamlit.
+- Tabela principal (apenas produtos na listagem; os inativos ficam no banco, com histórico): nome, marca, peso, preço atual, **preço por kg** (`preco / peso_g * 1000`), variação % contra a coleta anterior (▲/▼ com cor), **"Acima do piso"** (quanto o preço está acima do menor preço já registrado do produto) e badge de promoção. Ordenação por um dropdown (Variação, Preço, R$/kg, Peso, Nome) + seletor ascendente/descendente. As promoções não são repetidas aqui: são um card da home.
 - Gráfico de linha: evolução do preço de **um produto por vez**, com granularidade escolhida (dia, semana ou mês) e agregação pela média do período. O selectbox usa `dados.opcoes_produto` (rótulo único — há homônimos na listagem) e busca o histórico pelo `produto_id`. Usa a **última coleta de cada dia** (`dados.ultima_por_dia`) — no histórico antigo isso é a das 20h; as coletas das 08h ficam no banco mas não entram no gráfico. A agregação vive em `dados.agregar_periodo`.
-- Destaques: maiores quedas, promoções ativas e menor R$/kg.
+- Evolução de preço: linha de **um produto por vez**, granularidade dia/semana/mês.
 
 ### 7.5 Regras de Segurança (obrigatórias)
 
