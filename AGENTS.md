@@ -49,7 +49,7 @@ A connection string é um **segredo** (`DATABASE_URL`) e nunca aparece no códig
 | Framework | **Streamlit** |
 | Gráficos | **Plotly** |
 | Tabela interativa | Streamlit nativo + Plotly |
-| Acesso | **Somente leitura.** A visibilidade é definida no painel do Streamlit Cloud (Settings → Sharing); os dados são preços públicos de loja, sem dado pessoal. Consultas com cache de 1 h (`ttl=3600`) |
+| Acesso | **Público, sem login** (verificado em 05/11/2026 com navegador em contexto limpo). Somente leitura; os dados são preços de loja, sem dado pessoal. Consultas com cache de 1 h (`ttl=3600`) |
 | Escrita | **Nenhuma** — o painel só lê o Neon (§7.4) |
 
 ### 2.4 Ambiente de desenvolvimento
@@ -425,7 +425,8 @@ on:
 - **Anti-bot**: com 1 execução/dia e intervalo de 2s, risco mínimo.
 - **Idempotência**: URL como chave única (`UNIQUE`) evita duplicação de produtos; `precos` sempre insere nova linha (histórico).
 - **Neon suspende conexões ociosas**: por isso o engine usa `pool_pre_ping=True` (`scrapers/base.py`).
-- **Segredo no Streamlit Cloud**: a connection string vive nas *Secrets* do painel do app, nunca no repositório nem no bundle servido ao navegador. O painel é somente leitura; a visibilidade é escolhida em Settings → Sharing e os dados expostos são preços de loja, sem dado pessoal.
+- **Segredo no Streamlit Cloud**: a connection string vive nas *Secrets* do painel do app, nunca no repositório nem no bundle servido ao navegador. O painel é público e somente leitura; o que se expõe são preços de loja, sem dado pessoal.
+- **Como testar se o app responde**: `GET /` devolve `303` para `share.streamlit.io/-/auth/app` — isso é o bounce que emite a sessão anônima, não uma parede de login. Só um cliente que aceita cookie chega ao `200`; logo, `curl -I` isolado engana. Use `curl -sL -c /tmp/cj -b /tmp/cj -o /dev/null -w '%{http_code}'` (espera-se `200`) ou o health check do container em `/~/+/_stcore/health` (responde `ok` sem sessão).
 - **Sem Airflow nesta fase**: GitHub Actions é suficiente para 1 execução diária sem dependências complexas.
 
 ---
