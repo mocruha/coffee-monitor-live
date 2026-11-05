@@ -8,6 +8,20 @@ dashboard **Streamlit** somente leitura.
 
 Especificação, modelo de dados e limites de requisição: [`AGENTS.md`](AGENTS.md) (§4–§7).
 
+## Dashboard
+
+![Aba de produtos: filtros, métricas, tabela com variação, piso e R$/kg](docs/img/dashboard-produtos.png)
+
+![Aba de evolução: preço do pacote ao longo de 21 dias, com granularidade dia/semana/mês](docs/img/dashboard-evolucao.png)
+
+- **Filtros** (sidebar): marca, peso, faixa de preço, faixa de R$/kg, "somente promoções" e busca por nome.
+- **Tabela**: preço atual, preço anterior, variação percentual, **"acima do piso"** (quanto o preço está acima do menor preço já registrado do produto) e **R$/kg**, para comparar embalagens de 250 g com 1 kg.
+- **Evolução e destaques**: série por produto em dia/semana/mês, maiores quedas e menor preço por quilo.
+- **Somente leitura**: o painel nunca escreve no banco; o cache de consulta é de 1 h, e o botão **↻ Atualizar** relê na hora.
+
+> Capturas geradas offline a partir das páginas reais salvas em `tests/fixtures/`; a série anterior ao
+> último dia é sintética, só para ilustrar a variação. O app ao vivo usa as coletas reais do Neon.
+
 ## Arquitetura
 
 Três serviços desacoplados que se comunicam **apenas pelo banco**:
