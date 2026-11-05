@@ -112,6 +112,8 @@ def test_resumo(banco):
     assert resumo["promocoes"] == 2
     assert resumo["ultimo_status"] == "ok"
     assert resumo["maior_queda"][1] < 0
+    # B-3: o painel também precisa saber falar de alta de preço
+    assert resumo["maior_alta"][1] > 0
     assert resumo["sem_variacao"] == 0
     assert resumo["preco_por_kg_mediano"] > 0
 
@@ -143,6 +145,14 @@ def test_formatar_brl():
     assert dados.formatar_brl(None) == "—"
     # o `$` precisa sair escapado para o markdown do Streamlit não virar LaTeX
     assert dados.formatar_brl_md(112.0) == "R\\$ 112,00"
+
+
+def test_formatar_pct_tem_seta():
+    """B-2: sem seta, '+3%' e '-3%' se confundem numa tabela de 50 linhas."""
+    assert dados.formatar_pct(-4.87) == "▼ -4,87%"
+    assert dados.formatar_pct(12.5) == "▲ +12,50%"
+    assert dados.formatar_pct(0) == "0,00%"
+    assert dados.formatar_pct(None) == "—"
 
 
 def test_inativo_aparece_marcado(engine, cards):
