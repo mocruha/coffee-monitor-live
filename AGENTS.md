@@ -49,12 +49,14 @@ A connection string é um **segredo** (`DATABASE_URL`) e nunca aparece no códig
 | Framework | **Streamlit** |
 | Gráficos | **Plotly** |
 | Tabela interativa | Streamlit nativo + Plotly |
-| Acesso | Controlado pelas configurações de privacidade do Streamlit Cloud (lista de e-mails) |
+| Acesso | **Somente leitura.** A visibilidade é definida no painel do Streamlit Cloud (Settings → Sharing); os dados são preços públicos de loja, sem dado pessoal. Consultas com cache de 1 h (`ttl=3600`) |
 | Escrita | **Nenhuma** — o painel só lê o Neon (§7.4) |
 
 ### 2.4 Ambiente de desenvolvimento
 
-- Python 3.12 e um `.venv` local. Sem Playwright, sem Airflow, sem APScheduler.
+- Python 3.12 e um `.venv` local. Sem Airflow, sem APScheduler.
+- Playwright **não** é dependência do runtime: ele só existe dentro do workflow
+  `keepalive.yml` (que visita o app para driblar a hibernação do Streamlit Cloud).
 - Testes rodam offline em SQLite; o CI roda a mesma suíte contra PostgreSQL.
 
 ---
@@ -171,7 +173,7 @@ TORRA_RE = re.compile(
 )
 ```
 
-`intensa` entrou na lista depois da recon (aparece em "Café Grão Torra Intensa DuPan"). Se não aparecer no título → `torra = NULL`.
+`intensa` entrou na lista depois da verificação no site (aparece em "Café Grão Torra Intensa DuPan"). Se não aparecer no título → `torra = NULL`.
 
 **Cobertura real em 13/10/2026: torra em 4 dos 51 títulos e processo em 1 (`descafeinado`).** Na prática, os filtros de torra e processo do dashboard operam sobre uma minoria dos produtos — consequência consciente de não acessar páginas de detalhe.
 
@@ -289,7 +291,8 @@ coffee-monitor-live/
 ├── .github/
 │   └── workflows/
 │       ├── scraper.yml           # coleta 1x/dia + dispatch manual
-│       └── testes.yml            # pytest com service container PostgreSQL
+│       ├── testes.yml            # pytest com service container PostgreSQL
+│       └── keepalive.yml         # visita o app 4x/dia (hibernação de 12h)
 ├── .streamlit/
 │   ├── secrets.toml              # NUNCA vai para o Git (no .gitignore)
 │   └── secrets.toml.example      # placeholders, vai para o Git
@@ -307,7 +310,8 @@ coffee-monitor-live/
 │   ├── app.py                    # entry point do Streamlit
 │   └── dados.py                  # consultas de leitura
 ├── scripts/
-│   └── validar_parser.py         # diagnóstico ao vivo, sem gravar
+│   ├── validar_parser.py         # diagnóstico ao vivo, sem gravar
+│   └── keepalive.py              # acorda/visita o app no Streamlit Cloud (Playwright)
 ├── tests/
 │   ├── conftest.py               # engine por teste (SQLite local / Postgres no CI)
 │   ├── test_extractors.py        # parsing e regressão de layout
@@ -315,6 +319,7 @@ coffee-monitor-live/
 │   ├── test_dashboard_dados.py   # variação (LAG), somente leitura, resumo
 │   ├── test_santa_luzia.py       # integração offline do entry point
 │   └── fixtures/                 # 8 páginas reais + snapshot dos 51 produtos
+├── docs/                         # revisão do dashboard, plano de melhorias, imagens
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt              # runtime (scraper + dashboard)
@@ -348,8 +353,8 @@ coffee-monitor-live/
 ### 7.3 Agendamento — GitHub Actions
 
 **Decisão (13/10/2026, revisada em 16/10/2026):** a coleta roda no **GitHub
-Actions**, **1x/dia às 20h** (antes eram 2x/dia, às 08h e 20h), abandonando
-o cronjob local do Hermes. O cron do Actions é em **UTC**:
+Actions**, **1x/dia às 20h** (antes eram 2x/dia, às 08h e 20h). O cron do
+Actions é em **UTC**:
 
 ```yaml
 on:
@@ -410,10 +415,6 @@ on:
 | `gh workflow run scraper.yml` | Dispara a coleta manualmente no GitHub Actions. |
 | `gh run list --workflow=scraper.yml` | Histórico das execuções agendadas. |
 
-> Os comandos `hermes init/scrape/schedule/dashboard/test-extract/db-migrate` citados em
-> versões anteriores deste documento nunca existiram e foram removidos junto com o
-> agendador do Hermes.
-
 ---
 
 ## 9. Considerações e Riscos
@@ -424,42 +425,34 @@ on:
 - **Anti-bot**: com 1 execução/dia e intervalo de 2s, risco mínimo.
 - **Idempotência**: URL como chave única (`UNIQUE`) evita duplicação de produtos; `precos` sempre insere nova linha (histórico).
 - **Neon suspende conexões ociosas**: por isso o engine usa `pool_pre_ping=True` (`scrapers/base.py`).
-- **Segredo no Streamlit Cloud**: o acesso é restrito por lista de e-mails; qualquer pessoa autorizada enxerga os dados, mas não as credenciais.
+- **Segredo no Streamlit Cloud**: a connection string vive nas *Secrets* do painel do app, nunca no repositório nem no bundle servido ao navegador. O painel é somente leitura; a visibilidade é escolhida em Settings → Sharing e os dados expostos são preços de loja, sem dado pessoal.
 - **Sem Airflow nesta fase**: GitHub Actions é suficiente para 1 execução diária sem dependências complexas.
 
 ---
 
-## 10. Próximos Passos — situação
+## 10. Estado do projeto
 
-### Migração de stack (13/10/2026)
+Concluído:
 
-- [x] Reescrever o `AGENTS.md` para a arquitetura de 3 serviços.
-- [x] Estrutura de diretórios + arquivos de configuração (`requirements`, `.gitignore`, `secrets.toml.example`, workflows).
-- [x] `scrapers/base.py`: conexão com o Neon via `DATABASE_URL` (fonte única).
-- [x] Portar o scraper: `scrapers/{config,fetch,extractors,models,persistencia,santa_luzia}.py`.
-- [x] Modelo de dados em PostgreSQL (`TIMESTAMPTZ`, `SERIAL`, `now()`), começando vazio.
-- [x] Dashboard lendo do Neon via `st.secrets`/`DATABASE_URL`.
-- [x] Suíte de testes portada e verde (65 testes + 1 de rede opt-in), com service container PostgreSQL no CI.
+- [x] Arquitetura de 3 serviços (scraper, Neon, dashboard) com o modelo de dados da §6.
+- [x] Scraper completo: `scrapers/{base,config,fetch,extractors,models,persistencia,santa_luzia}.py`.
+- [x] Suíte de testes offline (SQLite) + 1 teste de rede opt-in; o CI roda a mesma suíte contra PostgreSQL.
+- [x] Banco no **Neon** (começando vazio) e secrets do repositório: `DATABASE_URL` e `CAFE_CONTATO`.
+- [x] Coleta diária no **GitHub Actions** (23h UTC = 20h BRT); CI de *Testes* verde na `main`.
+- [x] Painel publicado no **Streamlit Community Cloud** —
+      `https://coffee-monitor-live.streamlit.app/`, entrypoint `dashboard/app.py`, Python 3.12,
+      secret `DATABASE_URL` configurado no painel do app.
+- [x] `keepalive.yml`: visita o app 4x/dia para evitar a hibernação de 12h.
 
-### Pendências (feitas fora do código, no painel/GitHub)
+Em aberto:
 
-- [x] Criar o projeto no **Neon** (PostgreSQL) e copiar a connection string.
-- [x] Cadastrar os secrets do repositório: `DATABASE_URL` e `CAFE_CONTATO`.
-- [x] Criar o repositório no GitHub e dar push — **privado**, `mocruha/coffee-monitor-live`,
-      branch `main`, CI de *Testes* verde (pytest contra Postgres de serviço).
-- [x] Publicar o app no **Streamlit Community Cloud** — `https://coffee-monitor-live.streamlit.app/`
-      (privado, herda a privacidade do repo). Entrypoint `dashboard/app.py`, Python 3.12, secret
-      `DATABASE_URL`. Confirmado lendo o Neon: 51 produtos ativos, 2 promoções, coleta `ok`.
-- [x] Disparar `gh workflow run scraper.yml` uma vez e conferir a primeira coleta no Neon —
-      run `38511612477` verde: 8 páginas, **51 produtos gravados** (51 novos, 0 sem preço), coleta `ok`.
-- [x] **Desativar o cronjob do Hermes** `ba8ee65f81bf` (`coleta-cafes-santa-luzia`) — removido em
-      13/10/2026 com `hermes cron remove`; `hermes cron list` não tem mais jobs. O projeto antigo em
-      `/home/moc/hermes/coffee-monitor` (SQLite) permanece no disco, mas sem agendamento.
-- [ ] Monitorar 2–3 dias: conferir `gh run list --workflow=scraper.yml` e a tabela `coletas`.
+- [ ] Acompanhar algumas execuções de `gh run list --workflow=scraper.yml` e a tabela `coletas`
+      para confirmar que a coleta diária segue estável.
+- [ ] Triar os itens de melhoria em `docs/plano-melhorias-dashboard-outubro-2026.md`.
 
 ---
 
-## 11. Fatos verificados na fonte (recon de 13/10/2026)
+## 11. Fatos verificados na fonte (13/10/2026)
 
 Levantamento feito direto no site, com o parser rodando ao vivo. É a base de todas as
 correções aplicadas neste documento. **Continua válido** — a extração não mudou.

@@ -1,12 +1,12 @@
 # Plano de melhorias do dashboard — coffee-monitor-live
 
-> Contexto: PR #2 mesclado. O gráfico de evolução de preço apresenta bug: com granularidade "Dia", o eixo X mostra **hora/segundo** em vez de data. O usuário pediu também reduzir a coleta para 1x/dia às 20h. Este plano aborda o bug + o cron + a revisão do design.
+> Contexto: bug no gráfico de evolução de preço — com granularidade "Dia", o eixo X mostrava **hora/segundo** em vez de data. O mesmo ciclo de trabalho reduziu a coleta para 1x/dia às 20h. Este plano cobre o bug, o cron e a revisão do design.
 
-## Decisões tomadas (4 perguntas, usuário)
+## Decisões de projeto
 
 1. **Histórico das 08h** (já gravado no banco): manter no banco, **esconder só no gráfico**.
 2. **Granularidade do gráfico**: manter os três níveis — **Dia / Semana / Mês**.
-3. **Escopo da revisão do reviewer**: **correção + visualização** (não UX nem performance).
+3. **Escopo da revisão**: **correção + visualização** (não UX nem performance).
 4. **Escopo do filtro "só 20h"**: aplicar **apenas na função `grafico()`**; a tabela, barra de status e destaques continuam usando a coleta mais recente.
 
 ## Mudanças planejadas (em ordem de execução)
@@ -53,11 +53,11 @@
 
 **Arquivo:** `AGENTS.md` §7.4 — mencionar que o gráfico filtra só as coletas das 20h.
 
-### PR C — Resultados da revisão do reviewer (após PR B)
+### PR C — Resultados da revisão de código (após PR B)
 
-Depende do relatório do reviewer. Prováveis achados (hipóteses minhas, a confirmar):
+Prováveis achados da revisão (a confirmar):
 
-- **`carregar_historico()` sem filtro de horário:** se o reviewer julgar que a filtragem no dashboard é frágil, sugerir uma função `carregar_historico_noturno()` em `dados.py`.
+- **`carregar_historico()` sem filtro de horário:** se a revisão indicar que a filtragem no dashboard é frágil, sugerir uma função `carregar_historico_noturno()` em `dados.py`.
 - **`variacao_pct` com LAG:** com 1 coleta/dia, o LAG compara dia a dia. Se algum dia o scraper falhar, o LAG "pula" um dia — a variação passa a ser `dia-N vs dia-(N-2)`, que ainda é informativa. Verificar se o comportamento é aceitável.
 - **Agrupamento em Semana:** a semana ISO começa na segunda-feira; pode ser mais intuitivo usar semana civil (domingo). Verificar preferência.
 
@@ -67,15 +67,15 @@ Depende do relatório do reviewer. Prováveis achados (hipóteses minhas, a conf
 ## Ordem de execução
 
 ```
-PR A (cron)  ──→  PR B (gráfico)  ──→  revisão do reviewer  ──→  PR C (resultados)
+PR A (cron)  ──→  PR B (gráfico)  ──→  revisão de código  ──→  PR C (resultados)
     │                  │                       │
     ↓                  ↓                       ↓
   rápido            resolve o bug          sugere melhorias
   sem risco         reportado              que viram PR(s)
 ```
 
-- **PR A e PR B são independentes.** Posso criá-los em paralelo, em branches separadas.
-- **Revisão do reviewer** só depois do PR B mesclado (para que ele revise o código já corrigido).
+- **PR A e PR B são independentes:** podem ser abertos em branches separadas.
+- **Revisão de código** só depois do PR B mesclado (para revisar o código já corrigido).
 - **PR C** depende dos achados.
 
 ## Testes (para PR B)
@@ -97,6 +97,5 @@ Exercitar `grafico()` offline com dados sintéticos de **1 ponto por dia às 20h
 
 ## Observações
 
-- **Custo do reviewer:** o reviewer é um subagent pago por passo. Escopo focado (correção + visualização) mantém o custo baixo.
 - **Dados das 08h:** continuam no banco (`precos`), acessíveis via `carregar_historico()`. Só o gráfico filtra; tabelas e variações usam o estado mais recente.
 - **Nada muda no scraper em si.** A mudança é só de cron (PR A) e dashboard (PR B).
