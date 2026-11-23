@@ -13,7 +13,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from scrapers import extractors as ex, models, santa_luzia
+from scrapers import base, extractors as ex, models, santa_luzia
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -40,7 +40,7 @@ def test_executar_grava_e_audita(tmp_path, monkeypatch):
 
     assert santa_luzia.executar(url=url) == santa_luzia.SAIDA_OK
 
-    engine = models.criar_engine(url)
+    engine = base.criar_engine(url)
     with Session(engine) as sessao:
         assert sessao.scalar(select(models.Coleta)).status == "ok"
         assert len(sessao.scalars(select(models.Produto)).all()) == 51
@@ -53,7 +53,7 @@ def test_executar_dry_run_nao_grava(tmp_path, monkeypatch):
 
     assert santa_luzia.executar(url=url, dry_run=True) == santa_luzia.SAIDA_OK
 
-    engine = models.criar_engine(url)
+    engine = base.criar_engine(url)
     with Session(engine) as sessao:
         assert sessao.scalar(select(models.Coleta)) is None
 
@@ -65,7 +65,7 @@ def test_executar_aborta_quando_guarda_dispara(tmp_path, monkeypatch):
 
     assert santa_luzia.executar(url=url) == santa_luzia.SAIDA_ABORTADA
 
-    engine = models.criar_engine(url)
+    engine = base.criar_engine(url)
     with Session(engine) as sessao:
         coleta = sessao.scalar(select(models.Coleta))
         assert coleta.status == "abortada"
