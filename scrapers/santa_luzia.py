@@ -26,7 +26,7 @@ from pathlib import Path
 
 from sqlalchemy.orm import Session
 
-from . import config, extractors, fetch, models, persistencia
+from . import base, config, extractors, fetch, models, persistencia
 
 log = logging.getLogger("scraper")
 
@@ -80,7 +80,7 @@ def coletar(paginas_max: int = config.MAX_PAGINAS) -> tuple[dict[str, dict], dic
 def executar(url: str | None = None, paginas_max: int = config.MAX_PAGINAS,
              dry_run: bool = False) -> int:
     iniciada_em = persistencia.agora_utc()
-    engine = models.criar_engine(url)
+    engine = base.criar_engine(url)
     models.criar_schema(engine)
 
     try:

@@ -10,39 +10,21 @@ no GitHub Actions a exclusão mútua é o `concurrency` do workflow (AGENTS.md �
 
 from __future__ import annotations
 
-import gzip
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import pytest
+from conftest import PESOS_CONHECIDOS
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from scrapers import config, models, persistencia
-from scrapers import extractors as ex
+from scrapers import models, persistencia
 
-FIXTURES = Path(__file__).parent / "fixtures"
-PAGINAS = [f"listagem_p{n}.html.gz" for n in range(1, 8)]
 MOMENTO = datetime(2026, 10, 13, 12, 0, 0, tzinfo=timezone.utc)
-
-
-def ler(nome: str) -> str:
-    return gzip.decompress((FIXTURES / nome).read_bytes()).decode("utf-8")
 
 
 def _utc(valor: datetime) -> datetime:
     """Normaliza para UTC: o SQLite devolve naive, o Postgres devolve aware."""
     return valor.replace(tzinfo=timezone.utc) if valor.tzinfo is None else valor.astimezone(timezone.utc)
-
-
-@pytest.fixture
-def cards() -> dict[str, dict]:
-    """Os 51 produtos reais, extraídos das páginas salvas."""
-    todos: dict[str, dict] = {}
-    for pagina in PAGINAS:
-        for card in ex.extrair_cards(ler(pagina)):
-            todos.setdefault(card["url"], card)
-    return todos
 
 
 def contar(session: Session, modelo) -> int:
@@ -64,7 +46,7 @@ def test_primeira_gravacao(session, cards):
     produto = session.scalar(select(models.Produto).limit(1))
     assert produto.ativo is True
     assert _utc(produto.ultima_visao) == MOMENTO
-    assert produto.peso_g in config.PESOS_CONHECIDOS
+    assert produto.peso_g in PESOS_CONHECIDOS
 
 
 def test_segunda_gravacao_nao_duplica_produto(session, cards):

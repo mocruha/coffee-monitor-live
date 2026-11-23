@@ -6,7 +6,6 @@ iguais derrubava o script inteiro e as abas sumiam sem mensagem de erro no banco
 
 from __future__ import annotations
 
-import gzip
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,20 +16,8 @@ from streamlit.testing.v1 import AppTest
 
 from dashboard import dados
 from scrapers import persistencia
-from scrapers import extractors as ex
 
 APP = str(Path(__file__).resolve().parent.parent / "dashboard" / "app.py")
-FIXTURES = Path(__file__).resolve().parent / "fixtures"
-
-
-@pytest.fixture
-def cards() -> dict[str, dict]:
-    todos: dict[str, dict] = {}
-    for pagina in [f"listagem_p{n}.html.gz" for n in range(1, 8)]:
-        html = gzip.decompress((FIXTURES / pagina).read_bytes()).decode("utf-8")
-        for card in ex.extrair_cards(html):
-            todos.setdefault(card["url"], card)
-    return todos
 
 
 @pytest.fixture

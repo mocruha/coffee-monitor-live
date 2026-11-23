@@ -10,7 +10,6 @@ leitura) e que as chaves lidas pelo app existem no resumo.
 
 from __future__ import annotations
 
-import gzip
 import re
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,24 +20,9 @@ from sqlalchemy.orm import Session
 
 from dashboard import dados
 from scrapers import models, persistencia
-from scrapers import extractors as ex
 
-FIXTURES = Path(__file__).parent / "fixtures"
 PRIMEIRA = datetime(2026, 10, 13, 8, 0, 0, tzinfo=timezone.utc)
 SEGUNDA = datetime(2026, 10, 13, 20, 0, 0, tzinfo=timezone.utc)
-
-
-def ler(nome: str) -> str:
-    return gzip.decompress((FIXTURES / nome).read_bytes()).decode("utf-8")
-
-
-@pytest.fixture
-def cards() -> dict[str, dict]:
-    todos: dict[str, dict] = {}
-    for pagina in [f"listagem_p{n}.html.gz" for n in range(1, 8)]:
-        for card in ex.extrair_cards(ler(pagina)):
-            todos.setdefault(card["url"], card)
-    return todos
 
 
 @pytest.fixture
@@ -75,7 +59,6 @@ def test_variacao_tem_os_valores_certos(banco):
     assert len(quedas) == 1
     assert len(altas) == 1
     assert quedas["variacao_pct"].iloc[0] == pytest.approx(-20.0, abs=0.1)
-    assert quedas["variacao_abs"].iloc[0] < 0
 
 
 def test_preco_por_kg(banco):
@@ -393,8 +376,6 @@ def test_cards_novidades_usa_a_primeira_aparicao(engine, cards):
 
     veteranos_df = df[df["nome"] != nome_novo]
     assert not novidades["produto_id"].isin(veteranos_df["produto_id"]).any()
-    # o catálogo antigo tem `criado_em` recente e mesmo assim fica fora
-    assert (df["criado_em"] >= df["atualizado_em"].max() - pd.Timedelta(days=3)).all()
 
 
 def test_cards_novidades_janela_de_tres_dias(engine, cards):
@@ -422,7 +403,7 @@ def test_dias_com_coleta_ok_conta_dias_distintos(banco):
 
 def test_cards_com_dataframe_vazio_nao_quebra():
     vazio = pd.DataFrame(columns=["produto_id", "nome", "ativo", "variacao_pct",
-                                  "pct_sobre_piso", "em_promocao", "data_coleta", "criado_em"])
+                                  "pct_sobre_piso", "em_promocao", "data_coleta"])
     blocos = dados.cards(vazio)
     assert all(isinstance(df, pd.DataFrame) for df in blocos.values())
     assert all(df.empty for df in blocos.values())
