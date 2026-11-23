@@ -99,7 +99,7 @@ docs/               revisão do dashboard, plano de melhorias e pendências
 .github/workflows/
   scraper.yml       coleta 1x/dia às 20h (23h UTC)
   testes.yml        pytest com service container PostgreSQL
-  keepalive.yml     visita o app 4x/dia, contra a hibernação de 12h
+  keepalive.yml     visita o app 8x/dia, contra a hibernação de 12h
 ```
 
 ## Operação
@@ -111,7 +111,7 @@ docs/               revisão do dashboard, plano de melhorias e pendências
   produtos, se houver queda acima de 50% em relação à coleta anterior ou se mais de 10%
   dos cards vierem sem preço — uma mudança de layout não envenena o histórico.
 - **Hibernação**: o Streamlit Community Cloud dorme após 12h sem tráfego; o
-  `keepalive.yml` visita o app 4x/dia para mantê-lo acordado.
+  `keepalive.yml` visita o app 8x/dia para mantê-lo acordado.
 - **Códigos de saída** de `scrapers.santa_luzia`: `0` coleta ok, `1` erro (inclui
   `DATABASE_URL` ausente), `2` abortada pela guarda de sanidade ou pela rede.
 - **Cache do painel**: 1h por consulta, com botão **↻ Atualizar** na barra de status.

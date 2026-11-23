@@ -106,7 +106,48 @@ Schema autoritativo: `scrapers/models.py` (SQLAlchemy), criado de forma idempote
 
 ### 7.1 Estrutura de diretórios
 
-Árvore anotada: `README.md` §Estrutura.
+```text
+coffee-monitor-live/
+├── .github/
+│   └── workflows/
+│       ├── scraper.yml           # coleta 1x/dia + dispatch manual
+│       ├── testes.yml            # pytest com service container PostgreSQL
+│       └── keepalive.yml         # visita o app 8x/dia (hibernação de 12h)
+├── .streamlit/
+│   ├── secrets.toml              # NUNCA vai para o Git (no .gitignore)
+│   └── secrets.toml.example      # placeholders, vai para o Git
+├── scrapers/
+│   ├── __init__.py
+│   ├── base.py                   # conexão com o Neon (única fonte de DATABASE_URL)
+│   ├── config.py                 # alvo, limites do §5, marcas conhecidas
+│   ├── fetch.py                  # cliente HTTPX + robots.txt + delay + backoff
+│   ├── extractors.py             # parsing dos cards (§4)
+│   ├── models.py                 # SQLAlchemy: produtos, precos, coletas
+│   ├── persistencia.py           # guarda de sanidade + upsert + auditoria
+│   └── santa_luzia.py            # entry point: coleta e grava  (python -m scrapers.santa_luzia)
+├── dashboard/
+│   ├── __init__.py
+│   ├── app.py                    # entry point do Streamlit
+│   └── dados.py                  # consultas de leitura
+├── scripts/
+│   ├── validar_parser.py         # diagnóstico ao vivo, sem gravar
+│   └── keepalive.py              # acorda/visita o app no Streamlit Cloud (Playwright)
+├── tests/
+│   ├── conftest.py               # engine por teste (SQLite local / Postgres no CI)
+│   ├── test_extractors.py        # parsing e regressão de layout
+│   ├── test_persistencia.py      # gravação, guarda de sanidade, auditoria
+│   ├── test_dashboard_dados.py   # variação (LAG), somente leitura, resumo
+│   ├── test_santa_luzia.py       # integração offline do entry point
+│   └── fixtures/                 # 8 páginas reais + snapshot dos 51 produtos
+├── docs/                         # revisão do dashboard, plano de melhorias, imagens
+├── .env.example
+├── .gitignore
+├── requirements.txt              # runtime (scraper + dashboard)
+├── requirements-dev.txt          # pytest
+├── pytest.ini
+├── README.md
+└── AGENTS.md
+```
 
 ### 7.2 Desenvolvimento do Scraper
 
@@ -157,6 +198,18 @@ Testes, coleta, diagnóstico e dashboard: `README.md` (§Rodando localmente, §O
 ---
 
 ## 10. Estado do projeto
+
+Concluído:
+
+- [x] Arquitetura de 3 serviços (scraper, Neon, dashboard) com o modelo de dados da §6.
+- [x] Scraper completo: `scrapers/{base,config,fetch,extractors,models,persistencia,santa_luzia}.py`.
+- [x] Suíte de testes offline (SQLite) + 1 teste de rede opt-in; o CI roda a mesma suíte contra PostgreSQL.
+- [x] Banco no **Neon** (começando vazio) e secrets do repositório: `DATABASE_URL` e `CAFE_CONTATO`.
+- [x] Coleta diária no **GitHub Actions** (23h UTC = 20h BRT); CI de *Testes* verde na `main`.
+- [x] Painel publicado no **Streamlit Community Cloud** —
+      `https://coffee-monitor-live.streamlit.app/`, entrypoint `dashboard/app.py`, Python 3.12,
+      secret `DATABASE_URL` configurado no painel do app.
+- [x] `keepalive.yml`: visita o app 8x/dia para evitar a hibernação de 12h.
 
 Em aberto:
 
