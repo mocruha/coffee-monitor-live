@@ -48,7 +48,6 @@ LOG_PATH = Path(os.environ["CAFE_LOG"]) if os.getenv("CAFE_LOG") else None
 # --- Alvo ---
 BASE_URL = "https://www.santaluzia.com.br"
 LISTAGEM_URL = f"{BASE_URL}/matinais/cafe/cafe-em-graos"
-CATEGORIA_ID = 25619  # Matinais > Café > Café em grãos
 ROBOTS_URL = f"{BASE_URL}/robots.txt"
 
 # --- Política de limitação de requisições (AGENTS.md §5) ---
@@ -119,6 +118,3 @@ MARCAS_CONHECIDAS = (
 
 # Fuso usado apenas na EXIBIÇÃO; o banco grava tudo em UTC.
 TZ_EXIBICAO = "America/Sao_Paulo"
-
-# Pesos observados na categoria (150/250/500/1000 g) — usado como sanidade no dashboard.
-PESOS_CONHECIDOS = (150, 250, 500, 1000)

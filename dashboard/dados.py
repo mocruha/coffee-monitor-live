@@ -52,7 +52,6 @@ SELECT p.id            AS produto_id,
        p.peso_g        AS peso_g,
        p.ativo         AS ativo,
        p.ultima_visao  AS ultima_visao,
-       p.criado_em     AS criado_em,
        h.preco            AS preco,
        h.preco_original   AS preco_original,
        h.em_promocao      AS em_promocao,
@@ -230,7 +229,6 @@ def carregar_produtos(engine: Engine | None = None) -> pd.DataFrame:
         100 * (df.loc[tem_anterior, "preco"] - df.loc[tem_anterior, "preco_anterior"])
         / df.loc[tem_anterior, "preco_anterior"]
     ).round(2)
-    df["variacao_abs"] = (df["preco"] - df["preco_anterior"]).round(2)
     # quanto o preço de hoje está acima do menor preço já registrado para o produto
     com_piso = df["preco_piso"] > 0
     df["pct_sobre_piso"] = pd.NA
@@ -243,8 +241,6 @@ def carregar_produtos(engine: Engine | None = None) -> pd.DataFrame:
     df["em_promocao"] = df["em_promocao"].astype(bool)
     df["ativo"] = df["ativo"].astype(bool)
     df["atualizado_em"] = _localizar(df["data_coleta"])
-    df["visto_em"] = _localizar(df["ultima_visao"])
-    df["criado_em"] = _localizar(df["criado_em"])
     df["primeira_visao"] = _localizar(df["primeira_visao"])
     return df
 
