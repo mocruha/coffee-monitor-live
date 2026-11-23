@@ -1,9 +1,9 @@
 # AGENTS.md — Monitor de Cafés em Grãos (Casa Santa Luzia)
 
-> Documento específico do projeto **Santa Luzia**. A infraestrutura descrita aqui
-> segue a arquitetura-alvo de três serviços desacoplados pelo banco (ver §3),
-> definida em 13/10/2026. As seções de **extração (§4)** e **limitação de
-> requisições (§5)** são independentes da infraestrutura e foram preservadas.
+> Contratos e decisões do projeto Santa Luzia. O que se deduz do repositório
+> (estrutura, schema, comandos, stack) vive no código e no `README.md`; aqui
+> fica apenas o que não se deduz. Seções citadas por comentários no código
+> (§2, §4–§7, §11) mantêm a numeração.
 
 ## 1. Missão
 
@@ -18,267 +18,87 @@ Construir e manter um sistema de monitoramento de preços e modelos de **cafés 
 
 ## 2. Stack Tecnológica
 
-A stack é composta por **três serviços independentes que se comunicam apenas
-através do banco de dados PostgreSQL (Neon)**.
+Três serviços independentes acoplados **apenas pelo banco PostgreSQL (Neon)**.
+Dependências e versões: `requirements.txt` / `requirements-dev.txt`.
 
-### 2.1 Scraper (Coleta) — GitHub Actions
-
-| Componente | Escolha | Justificativa |
-|---|---|---|
-| Linguagem | **Python 3.12** | Ecossistema maduro, integração natural com o dashboard. |
-| HTTP Client | **HTTPX** | Suporte a async e timeouts, mais moderno que `requests`. |
-| Parser HTML | **BeautifulSoup4 + lxml** | Suficiente, pois só precisamos ler a listagem. |
-| Renderização JS | **Playwright** (descartado) | Verificado em 13/10/2026: os cards vêm no HTML inicial. Não é dependência. |
-| Agendamento | **GitHub Actions** (cron) | Agenda persistente, sem depender do PC ligado. |
-| Execução | **sem estado local** | Cada run é efêmero; não persiste arquivos entre execuções. |
-
-### 2.2 Persistência
-
-| Componente | Escolha |
-|---|---|
-| Banco | **Neon (PostgreSQL)** — única persistência do sistema |
-| Driver | **psycopg 3** (`psycopg[binary]`) |
-| ORM | **SQLAlchemy 2.x** |
-
-A connection string é um **segredo** (`DATABASE_URL`) e nunca aparece no código.
-
-### 2.3 Dashboard Web — Streamlit Community Cloud
-
-| Componente | Escolha |
-|---|---|
-| Framework | **Streamlit** |
-| Gráficos | **Plotly** |
-| Tabela interativa | Streamlit nativo + Plotly |
-| Acesso | **Público, sem login** (verificado em 05/11/2026 com navegador em contexto limpo). Somente leitura; os dados são preços de loja, sem dado pessoal. Consultas com cache de 1 h (`ttl=3600`) |
-| Escrita | **Nenhuma** — o painel só lê o Neon (§7.4) |
-
-### 2.4 Ambiente de desenvolvimento
-
-- Python 3.12 e um `.venv` local. Sem Airflow, sem APScheduler.
-- Playwright **não** é dependência do runtime: ele só existe dentro do workflow
-  `keepalive.yml` (que visita o app para driblar a hibernação do Streamlit Cloud).
-- Testes rodam offline em SQLite; o CI roda a mesma suíte contra PostgreSQL.
+- Scraper: **Python 3.12**, **HTTPX**, **BeautifulSoup4 + lxml**, agendado por **GitHub Actions** (cron), sem estado local.
+- Persistência: **Neon (PostgreSQL)**, **psycopg 3** + **SQLAlchemy 2.x**. `DATABASE_URL` é segredo, nunca no código (§7.5).
+- Dashboard: **Streamlit + Plotly** na Community Cloud, público, sem login, **somente leitura**, cache de 1 h.
+- **Playwright não é dependência do runtime** — só existe no workflow `keepalive.yml`. Sem Airflow, sem APScheduler.
+- Testes offline em SQLite; o CI roda a mesma suíte contra PostgreSQL.
 
 ---
 
 ## 3. Arquitetura do Sistema
 
-Três serviços, acoplados **apenas pelo banco**:
+Scraper (Actions) **escreve** no Neon; dashboard (Streamlit Cloud) **lê**. Nada mais persiste. Diagrama e responsabilidades: `README.md` §Arquitetura.
 
-```text
-┌──────────────────────────────────────┐
-│ SCRAPER — GitHub Actions (cron)      │
-│ Cron: 0 23 * * * (UTC)               │
-│      = 20h America/Sao_Paulo         │
-│ 1. Acessa a listagem de cafés        │
-│    (com paginação)                   │
-│ 2. Extrai cada card (§4)             │
-│ 3. NÃO acessa páginas de detalhe     │
-│ 4. Normaliza e faz INSERT/UPDATE     │
-│    no Neon                           │
-│ Sem estado local. Sem arquivos.      │
-└──────────────────────────────────────┘
-                    │  escreve
-                    ▼
-┌──────────────────────────────────────┐
-│ BANCO — Neon (PostgreSQL)            │
-│ produtos, precos, coletas            │
-│ Única persistência. Segredo:         │
-│ DATABASE_URL.                        │
-└──────────────────────────────────────┘
-                    │  lê
-                    ▼
-┌──────────────────────────────────────┐
-│ DASHBOARD — Streamlit Cloud          │
-│  - Filtros: peso, preço, R$/kg,      │
-│    promoção, marca                   │
-│  - Tabela com preço atual e variação │
-│  - Evolução de preço por produto     │
-│  - Visão geral em cards              │
-│ Somente leitura. Sem login.          │
-└──────────────────────────────────────┘
-```
-
-**Consequência da separação:** não existe mais lock em arquivo nem estado
-compartilhado. A exclusão mútua entre execuções é o `concurrency` do workflow
-(§7.3) e a idempotência vem da URL única do produto (§4.3).
+- Exclusão mútua entre execuções: `concurrency` do workflow (§7.3) — não há lock em arquivo.
+- Idempotência: URL única do produto (§4.3).
 
 ---
 
 ## 4. Estratégia de Extração (somente listagem)
 
-> Seção preservada da especificação original: descreve o alvo, não a infraestrutura.
-
 ### 4.1 Fontes de dados disponíveis no card
 
-Toda a extração vem de **duas fontes dentro do card de produto**:
-
-**Fonte A — Título (padrão conhecido):**
-
-```text
-Café <nome> - <peso>g
-```
-
-Exemplos:
-
-- `Café Santa Luzia Torra Média - 250g`
-- `Café Orfeu Intenso - 500g`
-- `Café 3 Corações Rituais - 1kg`
-
-Parsing do título (regra revisada em 13/10/2026, contra os 51 títulos reais — implementada em `scrapers/extractors.py`):
+**Fonte A — título:** padrão `Café <nome> - <peso>g`. Regra de parsing (implementada em `scrapers/extractors.py::parse_titulo`):
 
 1. Normalizar travessões e hífens tipográficos (`–`, `—`, `−`) para `-`.
-2. Tomar o **último** token `<número><g|kg>` do título como peso (a unidade é obrigatória, então números que fazem parte do nome não confundem o parser).
-3. O nome é tudo o que vem antes desse token, sem separador nas pontas.
+2. Tomar o **último** token `<número><g|kg>` do título como peso (unidade obrigatória; números no nome não confundem).
+3. Nome = tudo antes desse token, sem separador nas pontas. `g` → valor direto; `kg` → × 1000.
 
-Conversão:
+O regex ancorado original falhava em 38/51 títulos reais; a regressão está em `tests/test_extractors.py::test_regex_original_do_agents_md_falhava`.
 
-- `g` → valor direto
-- `kg` → valor × 1000
+**Fonte B — seletores do card (contrato de extração):**
 
-Motivo da revisão: o regex ancorado original,
+- Preço atual: span `[class*="sellingPrice"]` — **único** preço; não existe preço de Pix na listagem.
+- Preço original: span `[class*="listPrice"]`, só em promoção. `em_promocao = listPrice > sellingPrice`.
+- URL: `a.clearLink` — chave única, absoluta, sem parâmetros de rastreio.
+- Nome: span `[class*="productName"]`.
+- Card: `[class*="galleryItem"]`; **página sem cards = fim da paginação**.
 
-```python
-PADRAO_TITULO = re.compile(
-    r"^Café\s+(?P<nome>.+?)\s*-\s*(?P<peso>\d+)\s*(?P<unidade>g|kg)$",
-    re.IGNORECASE
-)
-```
+Armadilhas do HTML VTEX:
 
-falhava em 38 dos 51 títulos reais (74%): travessão unicode (`Café Coletânea Torra Clara em Grãos Bravo – 250g`), título sem separador (`Café em Grãos Acaiá Guaspari 250g`) e nome com número no meio (`Café Em Grãos Nanolote Orgânico Catiguá 1 Lobo do Serrote 250g`). A regra acima extrai peso e nome em 51/51 — garantido pelo teste `tests/test_extractors.py::test_regex_original_do_agents_md_falhava`.
+1. O span `productBrand` contém o **nome do produto**, não a marca — não há marca no card (deriva-se do título, `config.MARCAS_CONHECIDAS`).
+2. O preço vem fatiado em spans e o texto sai espaçado (`R$ 82 , 00`): remover todos os espaços antes de casar o número, senão vira `None` silenciosamente.
 
-**Fonte B — Tags/campos do card (confirmados no HTML real):**
+### 4.2 Atributos "difíceis" (torra, processo)
 
-- Preço atual: span com classe contendo `sellingPrice`. É o **único** preço exposto — **não existe preço de Pix na listagem** (verificado em 13/10/2026; as ocorrências de "Pix" no HTML eram do pixel do Facebook).
-- Preço original: span com classe contendo `listPrice`, presente apenas quando há promoção (o "De" riscado). Logo `em_promocao = listPrice > sellingPrice`.
-- URL do produto: `a.clearLink` — chave única, absoluta e sem parâmetros de rastreio.
-- Nome: span com classe contendo `productName`.
-- Card: elemento `[class*="galleryItem"]`; página sem cards = fim da paginação.
-
-Duas armadilhas do HTML, já tratadas em `scrapers/extractors.py`:
-
-1. Existe um span `productBrand` no card, mas ele contém o **nome do produto** — não a marca. **Não há marca no card.**
-2. A VTEX fatura o preço em vários spans (moeda, inteiro, decimal), então o texto extraído vem espaçado: `R$ 82 , 00`. É preciso remover todos os espaços antes de casar o número, senão o preço vira `None` silenciosamente.
-
-### 4.2 Atributos "difíceis" (torra, processo) — decisão revisada
-
-Não acessar a página de detalhes. Portanto:
-
-**Torra**: extrair apenas se aparecer no título. Regex aplicada ao nome:
-
-```python
-TORRA_RE = re.compile(
-    r"torra\s+(clara|m[ée]dia(?:\s*[-\s]\s*(?:clara|escura))?|escura|intensa)",
-    re.IGNORECASE,
-)
-```
-
-`intensa` entrou na lista depois da verificação no site (aparece em "Café Grão Torra Intensa DuPan"). Se não aparecer no título → `torra = NULL`.
-
-**Cobertura real em 13/10/2026: torra em 4 dos 51 títulos e processo em 1 (`descafeinado`).** Na prática, os filtros de torra e processo do dashboard operam sobre uma minoria dos produtos — consequência consciente de não acessar páginas de detalhe.
-
-**Processo** (Natural, Honey, Fermentado, Descafeinado): mesma lógica. Muitos produtos incluem "Natural", "Fermentado", "Descafeinado" no nome. Regex:
-
-```python
-PROCESSO_RE = re.compile(r"(natural|honey|fermentado|descafeinado|pulped)", re.IGNORECASE)
-```
-
-Se não aparecer no título → `processo = NULL`.
-
-Justificativa: manter o scraper simples e de alto desempenho, sem depender de descrições longas ou LLM. Produtos com atributos faltantes ficam como NULL no banco e podem ser enriquecidos manualmente depois, se valer a pena.
+Sem página de detalhes: **torra e processo só do título**, senão `NULL`. Regex em `scrapers/extractors.py` (`TORRA_RE`, `PROCESSO_RE`); sem LLM nem enriquecimento automático. Cobertura real é minoria (torra em 4/51 títulos, processo em 1/51 — `tests/test_extractors.py::test_atributos_do_titulo_sao_raros`); os filtros do dashboard operam sobre essa minoria por decisão consciente.
 
 ### 4.3 Identificação única do produto
 
-Usar a URL do produto como chave única. Isso é estável entre execuções e evita duplicatas mesmo se o título mudar levemente. No Postgres, a coluna `produtos.url` tem `UNIQUE`, então a idempotência é garantida pelo banco.
+A URL do produto é a chave única (`produtos.url UNIQUE`): estável entre execuções, evita duplicatas mesmo se o título mudar. Idempotência garantida pelo banco.
 
 ---
 
 ## 5. Política de Limitação de Requisições
 
-> Seção preservada da especificação original. Os números vivem em `scrapers/config.py`.
-
-Como agora só acessamos a página de listagem (provavelmente 1–5 páginas), o volume é mínimo. Mesmo assim, manter regras estritas:
+Os números vivem em `scrapers/config.py`; esta tabela é o contrato que eles implementam.
 
 | Parâmetro | Valor | Descrição |
 |---|---|---|
 | `DOWNLOAD_DELAY` | 2 segundos | Intervalo mínimo entre requisições consecutivas |
 | `CONCURRENT_REQUESTS_PER_DOMAIN` | 2 | Máximo de 2 requisições simultâneas ao mesmo domínio |
-| `MAX_REQUESTS_PER_SCRAPE` | 20 | Teto absoluto por execução (listagem + eventuais páginas) |
+| `MAX_REQUESTS_PER_SCRAPE` | 20 | Teto absoluto por execução |
 | `ROBOTS_TXT_OBEY` | True | Respeitar robots.txt; se houver Crawl-delay, usar o maior |
-| `USER_AGENT` | `Mozilla/5.0 (compatible; SantaLuziaCafeTracker/2.0; <contato>)` | Identificação clara. O contato vem de `CAFE_CONTATO` e é sanitizado para ASCII — acento em cabeçalho HTTP estoura `UnicodeEncodeError` |
+| `USER_AGENT` | `Mozilla/5.0 (compatible; SantaLuziaCafeTracker/2.0; <contato>)` | Contato de `CAFE_CONTATO`, sanitizado para ASCII (acento em cabeçalho HTTP estoura `UnicodeEncodeError`) |
 | `TIMEOUT` | 15s | Timeout por requisição |
 
-Volume real medido em 13/10/2026: 7 páginas com produtos + 1 página vazia (que encerra a paginação) + 1 robots.txt = **9 requisições por execução**, ~18s de duração com o delay de 2s. Muito abaixo do teto. Com a coleta agora **1x/dia**, são ~9 requisições/dia.
+Erros (constantes em `config.py`, lógica em `scrapers/fetch.py`): **429** → `Retry-After` ou backoff 10s → 20s → 40s, aborta após 2 tentativas; **5xx/timeout** → espera 5s, 1 retry, aborta se persistir.
 
-Tratamento de erros:
-
-- **HTTP 429 (Too Many Requests):**
-  - Ler `Retry-After` se presente.
-  - Senão, backoff exponencial: 10s → 20s → 40s (máx. 2 min).
-  - Após 2 tentativas, abortar a execução e registrar log.
-- **HTTP 5xx:** aguardar 5s, tentar 1 vez. Se persistir, abortar.
-- **Timeout:** tratar como 5xx (1 retry).
-
-Não sobreposição de execuções: `concurrency` do workflow do GitHub Actions (§7.3).
+Não sobreposição de execuções: `concurrency` do workflow (§7.3).
 
 ---
 
 ## 6. Modelo de Dados (Neon / PostgreSQL)
 
-O banco começa **vazio** (a migração optou por não trazer o histórico SQLite —
-ver §10). O schema é criado de forma idempotente por `models.criar_schema`
-(`Base.metadata.create_all`) na primeira execução do scraper.
+Schema autoritativo: `scrapers/models.py` (SQLAlchemy), criado de forma idempotente por `models.criar_schema` na primeira execução. Tabelas: `produtos`, `precos`, `coletas` (auditoria de cada execução).
 
-```sql
--- Datas em UTC com fuso (TIMESTAMP WITH TIME ZONE). A conversão para
--- America/Sao_Paulo é feita APENAS na exibição do dashboard.
-
-CREATE TABLE IF NOT EXISTS produtos (
-    id            SERIAL PRIMARY KEY,
-    nome          TEXT NOT NULL,
-    marca         TEXT,               -- derivada do título; NULL quando não identificada
-    url           TEXT UNIQUE NOT NULL, -- chave única, sem parâmetros de rastreio
-    peso_g        INTEGER,
-    torra         TEXT,               -- apenas se aparecer no título
-    processo      TEXT,               -- apenas se aparecer no título
-    ativo         BOOLEAN NOT NULL DEFAULT TRUE, -- FALSE quando o produto sai da listagem
-    ultima_visao  TIMESTAMP WITH TIME ZONE,      -- última coleta em que o produto apareceu
-    criado_em     TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS precos (
-    id             SERIAL PRIMARY KEY,
-    produto_id     INTEGER NOT NULL REFERENCES produtos(id),
-    preco          DOUBLE PRECISION NOT NULL,
-    preco_original DOUBLE PRECISION,   -- se em promoção
-    em_promocao    BOOLEAN NOT NULL DEFAULT FALSE,
-    data_coleta    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_precos_produto_data ON precos(produto_id, data_coleta DESC);
-
--- Auditoria de cada execução: detecta coleta vazia ou layout quebrado.
-CREATE TABLE IF NOT EXISTS coletas (
-    id              SERIAL PRIMARY KEY,
-    iniciada_em     TIMESTAMP WITH TIME ZONE NOT NULL,
-    finalizada_em   TIMESTAMP WITH TIME ZONE,
-    paginas         INTEGER NOT NULL DEFAULT 0,
-    requisicoes     INTEGER NOT NULL DEFAULT 0,
-    itens_vistos    INTEGER NOT NULL DEFAULT 0,
-    itens_gravados  INTEGER NOT NULL DEFAULT 0,
-    status          TEXT NOT NULL DEFAULT 'em_andamento',
-    mensagem        TEXT
-);
-```
-
-`preco_por_kg` **não** é coluna do banco: é calculado no dashboard (`preco / peso_g * 1000`), porque comparar 250g com 1kg sem normalizar engana.
-
-> **Atenção ao filtrar por coleta (verificado em 13/10/2026):** uma janela de datas mantém
-> todos os snapshots, então `LAG` funciona. Se o dashboard filtrar *apenas a coleta mais recente*
-> (`data_coleta = max(data_coleta)`) na mesma consulta, o `LAG` passa a ver uma linha por produto
-> e devolve `NULL` em toda a coluna de variação. Calcule o `LAG` numa CTE sobre o histórico
-> completo e só depois filtre. É o que `dashboard/dados.py::CONSULTA_ATUAL` faz (e há teste
-> de regressão: `tests/test_dashboard_dados.py::test_carregar_produtos_traz_variacao`).
+- Datas em **UTC com fuso**; conversão para `America/Sao_Paulo` **apenas na exibição** do dashboard.
+- `preco_por_kg` **não é coluna**: calcula-se `preco / peso_g * 1000` no dashboard.
+- **Variação (LAG):** calcule o `LAG` numa CTE sobre o histórico completo e só depois filtre o snapshot mais recente — filtrar antes devolve `NULL` em toda a coluna de variação, sem erro. Padrão: `dashboard/dados.py::CONSULTA_ATUAL`; regressão: `tests/test_dashboard_dados.py::test_carregar_produtos_traz_variacao`.
 
 ---
 
@@ -331,65 +151,26 @@ coffee-monitor-live/
 
 ### 7.2 Desenvolvimento do Scraper
 
-- **Extractors** (`scrapers/extractors.py`):
-  - `extrair_cards(html)` → lista de cards (dicts) de uma página; lista vazia é o critério de parada da paginação.
-  - `parse_titulo(titulo)` → `(nome, peso_g)` pela regra revisada da §4.1.
-  - `parse_preco(texto)` → float a partir do texto fatiado em spans.
-  - `parse_torra(nome)` / `parse_processo(nome)` → do título, ou `None`.
-  - `parse_marca(nome)` → marca por lista editável (`config.MARCAS_CONHECIDAS`), ou `None`.
-  - `url_canonica(href)` → URL absoluta sem parâmetros de rastreio (chave única).
-  - `extrair_produto(card)` → dicionário completo de um card.
-
-- **Normalização**:
-  - Peso: `g` direto; `kg` × 1000.
-  - Preço: remover espaços (a VTEX fatia o preço em spans) e trocar `,` por `.`.
-  - Promoção: `em_promocao = (preco_original is not None and preco_original > preco)`.
-  - Marca: casamento mais longo contra a lista conhecida, ignorando caixa e acentos.
-
-- **Persistência** (`scrapers/persistencia.py`): produto novo é inserido; produto existente é atualizado (nome, marca, peso, torra, processo, `ultima_visao`, `ativo=TRUE`); produto que não veio na coleta vira `ativo=FALSE` e sai da tabela principal, mantendo o histórico. `precos` recebe uma linha por produto por execução, sempre.
-
-- **Guarda de sanidade**: antes de gravar, aborta **sem snapshot** se a coleta vier com menos de `GUARDA_MIN_PRODUTOS` (5) itens, com queda acima de `GUARDA_QUEDA_MAX` (50%) em relação à coleta anterior, ou com mais de `GUARDA_MAX_SEM_PRECO` (10%) de cards sem preço — é o que impede uma mudança de layout de envenenar o histórico.
+- Parsing: `scrapers/extractors.py` (funções e normalizações documentadas no próprio módulo). Lista vazia de `extrair_cards` é o critério de parada da paginação.
+- Persistência (`scrapers/persistencia.py`): produto novo é inserido; existente é atualizado (`ultima_visao`, `ativo=TRUE`); produto ausente da coleta vira `ativo=FALSE` e sai da tabela principal, **mantendo o histórico**. `precos` recebe **uma linha por produto por execução**, sempre.
+- **Guarda de sanidade**: aborta **sem snapshot** se a coleta vier abaixo de `GUARDA_MIN_PRODUTOS`, com queda acima de `GUARDA_QUEDA_MAX` vs. coleta anterior, ou acima de `GUARDA_MAX_SEM_PRECO` de cards sem preço (valores em `config.py`). Impede mudança de layout de envenenar o histórico.
 
 ### 7.3 Agendamento — GitHub Actions
 
-**Decisão (13/10/2026, revisada em 16/10/2026):** a coleta roda no **GitHub
-Actions**, **1x/dia às 20h** (antes eram 2x/dia, às 08h e 20h). O cron do
-Actions é em **UTC**:
+Coleta **1x/dia às 20h** de Brasília = cron `"0 23 * * *"` UTC em `.github/workflows/scraper.yml` → `python -m scrapers.santa_luzia` (+ `workflow_dispatch` manual).
 
-```yaml
-on:
-  schedule:
-    - cron: "0 23 * * *"      # 23h UTC = 20h em America/Sao_Paulo (UTC-3)
-  workflow_dispatch: {}        # disparo manual pela aba Actions
-```
-
-- **Workflow:** `.github/workflows/scraper.yml` → `python -m scrapers.santa_luzia`.
-- **Segredos:** `DATABASE_URL` e `CAFE_CONTATO` vêm de
-  `Settings > Secrets and variables > Actions`.
-- **Não sobreposição:** `concurrency: group: coleta-cafes-santa-luzia` com
-  `cancel-in-progress: false` — uma execução nova espera a anterior, em vez de
-  rodar em paralelo. **Isto substitui o lock em arquivo** da versão SQLite.
-- **Sem estado local:** o runner é efêmero; nada é gravado além do Neon. Logs
-  úteis vão para o stdout da run.
-- **Atrasos:** o cron do Actions pode atrasar alguns minutos em horários de pico;
-  aceitável para 1 coleta/dia.
-- **Justificativa vs. alternativas:** cronjob local (WSL) só roda com o PC
-  ligado; APScheduler seria mais uma dependência. O Actions tem agenda
-  persistente e é gratuito para repositórios públicos.
+- **Não sobreposição:** `concurrency: group: coleta-cafes-santa-luzia`, `cancel-in-progress: false` — execução nova espera a anterior. Substitui o lock em arquivo da versão SQLite.
+- **Segredos:** `DATABASE_URL` e `CAFE_CONTATO` em `Settings > Secrets and variables > Actions`.
+- Runner efêmero, sem estado local; log útil no stdout da run.
 
 ### 7.4 Dashboard
 
-- Carregar dados com pandas + cache `@st.cache_data(ttl=3600)`; o botão **↻ Atualizar** na barra de status limpa o cache e relê o banco (a coleta das 20h não espera a hora do cache expirar).
-- Conexão via `st.secrets["DATABASE_URL"]` (fallback para a variável de ambiente).
-- **Somente leitura:** o painel nunca escreve — a garantia é de política, e há um
-  teste que varre `dashboard/dados.py` por comandos de escrita
-  (`test_dashboard_nao_escreve`).
-- **Layout em três abas:** **Visão geral** (home: os seis cards), **Tabela** e **Evolução de preço**. Os KPIs (ativos, promoções, R$/kg mediano, maior queda, maior alta, fora da listagem) ficam na barra fixa, visíveis em todas as abas. Os cards e os KPIs olham o **catálogo inteiro**; a sidebar filtra apenas Tabela e Evolução — a home responde "como está a categoria hoje?", não "como está o meu recorte".
-- Filtros na sidebar: peso, marca, faixa de preço, faixa de R$/kg, "somente promoção" e busca por nome (texto literal, sem regex). A lógica vive em `dados.filtrar` para ser testável. Produto **sem peso** continua visível (R$/kg em branco) — valor desconhecido nunca é tratado como "fora da faixa", e `dados.formatar_peso` é o único formatador de peso (evita `nang`).
-- **Visão geral (home):** seis cards — maiores quedas, maiores altas, mais perto do piso (produtos a 0% do menor preço já registrado), promoções ativas, novidades (**primeira aparição** — `MIN(precos.data_coleta)` — nos últimos 3 dias) e situação da última coleta. Cada card corta em 5 linhas e aponta para a aba Tabela. A lógica vive em `dados.cards`, testável sem Streamlit. "Novidade" não usa `produtos.criado_em`: numa migração todos os produtos nascem no mesmo dia e o card listaria o catálogo inteiro.
-- Tabela principal (apenas produtos na listagem; os inativos ficam no banco, com histórico): nome, marca, peso, preço atual, **preço por kg** (`preco / peso_g * 1000`), variação % contra a coleta anterior (▲/▼ com cor), **"Acima do piso"** (quanto o preço está acima do menor preço já registrado do produto) e badge de promoção. Ordenação por um dropdown (Variação, Preço, R$/kg, Peso, Nome) + seletor ascendente/descendente. As promoções não são repetidas aqui: são um card da home.
-- Gráfico de linha: evolução do preço de **um produto por vez**, com granularidade escolhida (dia, semana ou mês) e agregação pela média do período. O selectbox usa `dados.opcoes_produto` (rótulo único — há homônimos na listagem) e busca o histórico pelo `produto_id`. Usa a **última coleta de cada dia** (`dados.ultima_por_dia`) — no histórico antigo isso é a das 20h; as coletas das 08h ficam no banco mas não entram no gráfico. A agregação vive em `dados.agregar_periodo`.
-- Evolução de preço: linha de **um produto por vez**, granularidade dia/semana/mês.
+- **Somente leitura** por política; `tests/test_dashboard_dados.py::test_dashboard_nao_escreve` varre `dashboard/dados.py` por comandos de escrita.
+- KPIs e cards da home olham o **catálogo inteiro**; a sidebar filtra **apenas Tabela e Evolução**.
+- "Novidade" = **primeira aparição** (`MIN(precos.data_coleta)`), nunca `produtos.criado_em` (numa migração todos nascem no mesmo dia).
+- Produto **sem peso continua visível** (R$/kg em branco): valor desconhecido nunca é "fora da faixa". `dados.formatar_peso` é o único formatador de peso (evita `nang`).
+- Evolução: **um produto por vez**, rótulo único via `dados.opcoes_produto` (há homônimos), histórico pelo `produto_id`, **última coleta de cada dia** (`dados.ultima_por_dia`), agregação pela média (`dados.agregar_periodo`).
+- Layout, filtros e colunas: `README.md` §Dashboard e `dashboard/app.py`.
 
 ### 7.5 Regras de Segurança (obrigatórias)
 
@@ -405,31 +186,14 @@ on:
 
 ## 8. Comandos
 
-| Comando | Ação |
-|---|---|
-| `.venv/bin/pytest` | Roda os testes offline (SQLite) contra o HTML real salvo em `tests/fixtures/`. |
-| `TEST_DATABASE_URL=postgresql+psycopg://... .venv/bin/pytest` | Roda a mesma suíte contra um PostgreSQL real. |
-| `CAFE_LIVE=1 .venv/bin/pytest -k ao_vivo` | Valida o parser contra o site ao vivo. |
-| `.venv/bin/python scripts/validar_parser.py` | Diagnóstico do parser: baixa a listagem, imprime os produtos e **não grava no banco**. |
-| `.venv/bin/python -m scrapers.santa_luzia --dry-run` | Baixa e valida, sem gravar nada. |
-| `.venv/bin/python -m scrapers.santa_luzia` | Executa a coleta e persiste no Neon (usando `DATABASE_URL`). |
-| `.venv/bin/streamlit run dashboard/app.py` | Sobe o dashboard localmente. |
-| `gh workflow run scraper.yml` | Dispara a coleta manualmente no GitHub Actions. |
-| `gh run list --workflow=scraper.yml` | Histórico das execuções agendadas. |
+Testes, coleta, diagnóstico e dashboard: `README.md` (§Rodando localmente, §Operação).
 
 ---
 
 ## 9. Considerações e Riscos
 
-- **Cards via JS — resolvido**: verificado em 13/10/2026 que a listagem vem no HTML inicial (VTEX IO server-rendered). Playwright fica fora do projeto.
-- **Atributos não presentes no título**: torra e processo ficarão NULL para vários produtos. Isso é aceitável — o dashboard mostra "não informado" e os filtros ignoram NULL.
-- **Mudanças de layout**: seletores CSS podem quebrar. Manter o código modular e rodar `.venv/bin/pytest` (testes de regressão contra o HTML real) e `scripts/validar_parser.py` sempre que notar falha.
-- **Anti-bot**: com 1 execução/dia e intervalo de 2s, risco mínimo.
-- **Idempotência**: URL como chave única (`UNIQUE`) evita duplicação de produtos; `precos` sempre insere nova linha (histórico).
-- **Neon suspende conexões ociosas**: por isso o engine usa `pool_pre_ping=True` (`scrapers/base.py`).
-- **Segredo no Streamlit Cloud**: a connection string vive nas *Secrets* do painel do app, nunca no repositório nem no bundle servido ao navegador. O painel é público e somente leitura; o que se expõe são preços de loja, sem dado pessoal.
-- **Como testar se o app responde**: `GET /` devolve `303` para `share.streamlit.io/-/auth/app` — isso é o bounce que emite a sessão anônima, não uma parede de login. Só um cliente que aceita cookie chega ao `200`; logo, `curl -I` isolado engana. Use `curl -sL -c /tmp/cj -b /tmp/cj -o /dev/null -w '%{http_code}'` (espera-se `200`) ou o health check do container em `/~/+/_stcore/health` (responde `ok` sem sessão).
-- **Sem Airflow nesta fase**: GitHub Actions é suficiente para 1 execução diária sem dependências complexas.
+- **Mudanças de layout:** seletores CSS podem quebrar. Ao notar falha, rodar `.venv/bin/pytest` (regressão contra HTML real) e `.venv/bin/python scripts/validar_parser.py`.
+- **Como testar se o app responde:** `GET /` devolve `303` para `share.streamlit.io/-/auth/app` — é o bounce que emite a sessão anônima, não parede de login; `curl -I` isolado engana. Use `curl -sL -c /tmp/cj -b /tmp/cj -o /dev/null -w '%{http_code}'` (espera `200`) ou o health `/~/+/_stcore/health` (responde `ok` sem sessão — ver `scripts/keepalive.py`).
 
 ---
 
@@ -449,54 +213,16 @@ Concluído:
 
 Em aberto:
 
-- [ ] Acompanhar algumas execuções de `gh run list --workflow=scraper.yml` e a tabela `coletas`
-      para confirmar que a coleta diária segue estável.
+- [ ] Acompanhar algumas execuções de `gh run list --workflow=scraper.yml` e a tabela `coletas` para confirmar que a coleta diária segue estável.
 - [ ] Triar os itens de melhoria em `docs/plano-melhorias-dashboard-outubro-2026.md`.
 
 ---
 
 ## 11. Fatos verificados na fonte (13/10/2026)
 
-Levantamento feito direto no site, com o parser rodando ao vivo. É a base de todas as
-correções aplicadas neste documento. **Continua válido** — a extração não mudou.
+Recon ao vivo; o essencial também está no docstring de `scrapers/config.py`. Continua válido — a extração não mudou.
 
-### 11.1 Alvo e permissão
-
-- Categoria correta: `https://www.santaluzia.com.br/matinais/cafe/cafe-em-graos` (ID 25619,
-  Matinais > Café > Café em grãos). Ela é separada de `cafe-torrado-e-moido`,
-  `cafe-em-capsulas`, `cafe-soluvel`, `drip-coffe` e `sache` — o escopo "só grãos" tem
-  categoria própria e não precisa de heurística no título.
-- `robots.txt` libera a categoria e as páginas de produto. Bloqueia `/account`, `/login`,
-  `/checkout`, `/busca`, `/espiar`, `/admin` e `/api/sessions` — nada que o projeto use.
-- A loja é VTEX IO. A API legada de catálogo (`/api/catalog_system/pub/products/search`)
-  responde HTTP 200 com lista vazia: não existe atalho JSON, a extração é por HTML.
-
-### 11.2 Volume e paginação
-
-- 51 produtos em 8 páginas: 7 páginas com 8 itens, a última com 3 (8 por página).
-- Da 8ª página em diante o site responde **HTTP 200 com uma página normal, porém sem cards** —
-  por isso o critério de parada é "página sem cards", e não "página com erro".
-- 9 requisições por execução (7 páginas + a vazia + robots.txt), ~18s com o delay de 2s.
-
-### 11.3 O que o card oferece
-
-| Dado | Onde está | Observação |
-|---|---|---|
-| Nome | span `[class*="productName"]` | título completo |
-| Preço atual | span `[class*="sellingPrice"]` | único preço do card |
-| Preço original | span `[class*="listPrice"]` | existe apenas em promoção |
-| URL | `a[class*="clearLink"]` | chave única do produto |
-| Card | `[class*="galleryItem"]` | 8 por página |
-
-Não existem no card: marca, torra, processo, badge de promoção nem preço de Pix. O span
-chamado `productBrand` contém o **nome do produto** — nome enganoso da VTEX.
-
-### 11.4 Números de referência do dia
-
-- Preços: R$ 29,00 (menor) a R$ 231,00 (maior).
-- Preço por quilo: de R$ 116,00 a R$ 924,00 no mesmo instante — comparar pesos diferentes
-  sem normalizar por quilo engana.
-- Promoções: 2 de 51 (`Café Rituais Grão 3 Corações - 500g`, R$ 93,00 → R$ 67,00;
-  `Café torrado em grãos illy 250g`, R$ 70,00 → R$ 59,90).
-- Atributos do título: torra em 4 títulos, processo em 1; marca derivada em 48 de 51
-  (as 3 restantes ficam NULL por não terem marca reconhecível no título).
+- Alvo: categoria `matinais/cafe/cafe-em-graos` (ID 25619), exclusiva de grãos — URL e ID em `config.py` (`LISTAGEM_URL`, `CATEGORIA_ID`). `robots.txt` libera a categoria e as páginas de produto.
+- **Não existe atalho JSON:** a API legada (`/api/catalog_system/pub/products/search`) responde HTTP 200 com lista vazia. A extração é por HTML.
+- Paginação: 8 itens por página; da página vazia em diante o site responde **HTTP 200 normal, sem cards** — o critério de parada é "página sem cards", não erro.
+- Seletores do card: §4.1. Números do dia (51 produtos, faixas de preço): fixtures em `tests/fixtures/`.

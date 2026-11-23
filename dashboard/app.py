@@ -309,9 +309,6 @@ def grafico(produtos: pd.DataFrame) -> None:
     st.plotly_chart(figura, width="stretch")
 
 
-
-
-
 def _card(titulo: str, linhas: list[str], vazio: str, limite: int = 5) -> None:
     """Um bloco da visão geral: título, até `limite` linhas e aviso quando vazio.
 

@@ -30,8 +30,6 @@ from sqlalchemy import (
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from . import base
-
 
 class Base(DeclarativeBase):
     """Base declarativa do projeto."""
@@ -99,11 +97,6 @@ class Coleta(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - conveniência de debug
         return f"<Coleta {self.id} {self.status} itens={self.itens_gravados}>"
-
-
-def criar_engine(url: str | None = None, echo: bool = False) -> Engine:
-    """Cria o engine do banco (delega a `base`, fonte única da connection string)."""
-    return base.criar_engine(url, echo=echo)
 
 
 def criar_schema(engine: Engine) -> None:
