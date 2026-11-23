@@ -12,33 +12,15 @@ CAFE_LIVE=1 para validar contra o site de verdade.
 
 from __future__ import annotations
 
-import gzip
 import json
 import os
 import re
-from pathlib import Path
 
 import pytest
 
+from conftest import FIXTURES, PESOS_CONHECIDOS, ler_fixture
 from scrapers import config
 from scrapers import extractors as ex
-
-FIXTURES = Path(__file__).parent / "fixtures"
-PAGINAS = [f"listagem_p{n}.html.gz" for n in range(1, 8)]
-
-
-def ler_fixture(nome: str) -> str:
-    return gzip.decompress((FIXTURES / nome).read_bytes()).decode("utf-8")
-
-
-@pytest.fixture(scope="session")
-def produtos() -> dict[str, dict]:
-    """Todos os produtos extraídos das páginas reais (chave: URL)."""
-    todos: dict[str, dict] = {}
-    for pagina in PAGINAS:
-        for card in ex.extrair_cards(ler_fixture(pagina)):
-            todos.setdefault(card["url"], card)
-    return todos
 
 
 @pytest.fixture(scope="session")
@@ -87,12 +69,12 @@ def test_parse_titulo_sem_peso():
     assert nome == "Café Especial da Casa"
 
 
-def test_regex_original_do_agents_md_falhava():
+def test_regex_original_do_agents_md_falhava(cards):
     """Documenta o recon: o PADRAO_TITULO do AGENTS.md §4.1 não serve para os dados reais."""
     padrao_original = re.compile(
         r"^Café\s+(?P<nome>.+?)\s*-\s*(?P<peso>\d+)\s*(?P<unidade>g|kg)$", re.IGNORECASE
     )
-    titulos = [c["titulo"] for c in _produtos_offline()]
+    titulos = [c["titulo"] for c in cards.values()]
     falhas = [t for t in titulos if not padrao_original.match(t)]
     assert len(falhas) > len(titulos) / 2, "esperado que o regex original falhasse na maioria"
 
@@ -175,7 +157,7 @@ def test_pagina_de_produtos():
         assert card["url"].startswith("https://www.santaluzia.com.br/")
         assert card["url"].endswith("/p") or "/p" in card["url"]
         assert card["preco"] and card["preco"] > 0
-        assert card["peso_g"] in config.PESOS_CONHECIDOS
+        assert card["peso_g"] in PESOS_CONHECIDOS
 
 
 def test_pagina_parcial():
@@ -189,34 +171,34 @@ def test_pagina_vazia_e_o_criterio_de_parada():
     assert ex.extrair_cards(html) == []
 
 
-def test_conjunto_completo_de_produtos(produtos):
-    assert len(produtos) == 51
-    for card in produtos.values():
+def test_conjunto_completo_de_produtos(cards):
+    assert len(cards) == 51
+    for card in cards.values():
         assert card["nome"] and card["nome"].lower().startswith("café")
-        assert card["peso_g"] in config.PESOS_CONHECIDOS
+        assert card["peso_g"] in PESOS_CONHECIDOS
         assert 20 <= card["preco"] <= 1000
         assert card["preco_original"] is None or card["preco_original"] >= card["preco"]
 
 
-def test_promocao(produtos):
-    promo = [c for c in produtos.values() if c["em_promocao"]]
+def test_promocao(cards):
+    promo = [c for c in cards.values() if c["em_promocao"]]
     assert len(promo) == 2
     for card in promo:
         assert card["preco_original"] > card["preco"]
         assert card["nome"]  # nome utilizável no dashboard
 
 
-def test_atributos_do_titulo_sao_raros(produtos):
+def test_atributos_do_titulo_sao_raros(cards):
     """AGENTS.md §4.2: torra/processo só existem quando o título informa."""
-    assert sum(1 for c in produtos.values() if c["torra"]) == 4
-    assert sum(1 for c in produtos.values() if c["processo"]) == 1
+    assert sum(1 for c in cards.values() if c["torra"]) == 4
+    assert sum(1 for c in cards.values() if c["processo"]) == 1
 
 
-def test_regressao_contra_snapshot(produtos, esperado):
+def test_regressao_contra_snapshot(cards, esperado):
     """Compara o parsing atual com o snapshot das mesmas páginas (alarme de layout)."""
-    assert set(produtos) == set(esperado)
+    assert set(cards) == set(esperado)
     for url, referencia in esperado.items():
-        atual = produtos[url]
+        atual = cards[url]
         assert atual["nome"] == referencia["nome"]
         assert atual["peso_g"] == referencia["peso_g"]
         assert atual["preco"] == referencia["preco"]
@@ -228,13 +210,6 @@ def test_url_canonica_remove_rastreio():
     assert ex.url_canonica("/cafe-x-123/p?utm_source=zap&skuId=7") == (
         "https://www.santaluzia.com.br/cafe-x-123/p?skuId=7"
     )
-
-
-def _produtos_offline() -> list[dict]:
-    todos: list[dict] = []
-    for pagina in PAGINAS:
-        todos.extend(ex.extrair_cards(ler_fixture(pagina)))
-    return todos
 
 
 # --------------------------------------------------------------------------

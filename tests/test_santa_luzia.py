@@ -7,24 +7,10 @@ guarda de sanidade -> gravação -> auditoria em `coletas`.
 
 from __future__ import annotations
 
-import gzip
-from pathlib import Path
-
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from scrapers import base, extractors as ex, models, santa_luzia
-
-FIXTURES = Path(__file__).parent / "fixtures"
-
-
-def _cards() -> dict[str, dict]:
-    todos: dict[str, dict] = {}
-    for n in range(1, 8):
-        html = gzip.decompress((FIXTURES / f"listagem_p{n}.html.gz").read_bytes()).decode("utf-8")
-        for card in ex.extrair_cards(html):
-            todos.setdefault(card["url"], card)
-    return todos
+from scrapers import base, models, santa_luzia
 
 
 def _stub(produtos: dict[str, dict]):
@@ -34,8 +20,8 @@ def _stub(produtos: dict[str, dict]):
     return coletar
 
 
-def test_executar_grava_e_audita(tmp_path, monkeypatch):
-    monkeypatch.setattr(santa_luzia, "coletar", _stub(_cards()))
+def test_executar_grava_e_audita(tmp_path, monkeypatch, cards):
+    monkeypatch.setattr(santa_luzia, "coletar", _stub(cards))
     url = f"sqlite:///{tmp_path / 'integracao.db'}"
 
     assert santa_luzia.executar(url=url) == santa_luzia.SAIDA_OK
@@ -47,8 +33,8 @@ def test_executar_grava_e_audita(tmp_path, monkeypatch):
         assert len(sessao.scalars(select(models.Preco)).all()) == 51
 
 
-def test_executar_dry_run_nao_grava(tmp_path, monkeypatch):
-    monkeypatch.setattr(santa_luzia, "coletar", _stub(_cards()))
+def test_executar_dry_run_nao_grava(tmp_path, monkeypatch, cards):
+    monkeypatch.setattr(santa_luzia, "coletar", _stub(cards))
     url = f"sqlite:///{tmp_path / 'dry.db'}"
 
     assert santa_luzia.executar(url=url, dry_run=True) == santa_luzia.SAIDA_OK
@@ -58,8 +44,8 @@ def test_executar_dry_run_nao_grava(tmp_path, monkeypatch):
         assert sessao.scalar(select(models.Coleta)) is None
 
 
-def test_executar_aborta_quando_guarda_dispara(tmp_path, monkeypatch):
-    poucos = dict(list(_cards().items())[:3])  # abaixo de GUARDA_MIN_PRODUTOS
+def test_executar_aborta_quando_guarda_dispara(tmp_path, monkeypatch, cards):
+    poucos = dict(list(cards.items())[:3])  # abaixo de GUARDA_MIN_PRODUTOS
     monkeypatch.setattr(santa_luzia, "coletar", _stub(poucos))
     url = f"sqlite:///{tmp_path / 'guarda.db'}"
 
