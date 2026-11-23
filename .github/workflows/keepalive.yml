@@ -1,7 +1,10 @@
 name: keepalive
 on:
   schedule:
-    - cron: "5 */6 * * *"   # 4x/dia, espaçamento < janela de 12h
+    # 8x/dia, minuto 17 para fugir do congestionamento do :00.
+    # O cron do Actions descarta/atrasa slots: com 6h observou-se vão de 14h43m
+    # entre execuções (11-2026), o que fura a janela de 12h de hibernação.
+    - cron: "17 */3 * * *"
   workflow_dispatch: {}
 permissions: {}
 jobs:
