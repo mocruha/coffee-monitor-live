@@ -292,7 +292,7 @@ coffee-monitor-live/
 │   └── workflows/
 │       ├── scraper.yml           # coleta 1x/dia + dispatch manual
 │       ├── testes.yml            # pytest com service container PostgreSQL
-│       └── keepalive.yml         # visita o app 4x/dia (hibernação de 12h)
+│       └── keepalive.yml         # visita o app 8x/dia (hibernação de 12h)
 ├── .streamlit/
 │   ├── secrets.toml              # NUNCA vai para o Git (no .gitignore)
 │   └── secrets.toml.example      # placeholders, vai para o Git
@@ -445,7 +445,7 @@ Concluído:
 - [x] Painel publicado no **Streamlit Community Cloud** —
       `https://coffee-monitor-live.streamlit.app/`, entrypoint `dashboard/app.py`, Python 3.12,
       secret `DATABASE_URL` configurado no painel do app.
-- [x] `keepalive.yml`: visita o app 4x/dia para evitar a hibernação de 12h.
+- [x] `keepalive.yml`: visita o app 8x/dia para evitar a hibernação de 12h.
 
 Em aberto:
 
